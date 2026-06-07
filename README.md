@@ -2,7 +2,6 @@
 
 **Cross-border B2B Payroll & Contractor Payments on Stellar**
 
-[![CI](https://github.com/your-org/stellar-payroll/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/stellar-payroll/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Stellar](https://img.shields.io/badge/Stellar-Testnet-0c87f2)](https://stellar.org)
 [![Soroban](https://img.shields.io/badge/Soroban-21-7c3aed)](https://soroban.stellar.org)
