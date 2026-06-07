@@ -1,0 +1,157 @@
+import {
+  Horizon,
+  Keypair,
+  SorobanRpc,
+  TransactionBuilder,
+  Networks,
+  nativeToScVal,
+  scValToNative,
+  Address,
+  BASE_FEE,
+  xdr,
+} from '@stellar/stellar-sdk';
+
+import { loadEnv } from '../config/index.js';
+
+const env = loadEnv();
+
+export class StellarService {
+  private horizon: Horizon.Server;
+  private rpc: SorobanRpc.Server;
+  private networkPassphrase: string;
+
+  constructor() {
+    this.horizon = new Horizon.Server(env.STELLAR_HORIZON_URL);
+    this.rpc = new SorobanRpc.Server(env.STELLAR_RPC_URL);
+    this.networkPassphrase =
+      env.STELLAR_NETWORK === 'mainnet'
+        ? Networks.PUBLIC
+        : env.STELLAR_NETWORK === 'testnet'
+          ? Networks.TESTNET
+          : Networks.STANDALONE;
+  }
+
+  getHorizon(): Horizon.Server {
+    return this.horizon;
+  }
+
+  getRpc(): SorobanRpc.Server {
+    return this.rpc;
+  }
+
+  getNetworkPassphrase(): string {
+    return this.networkPassphrase;
+  }
+
+  async fundAccount(publicKey: string): Promise<void> {
+    if (env.STELLAR_NETWORK !== 'testnet') {
+      throw new Error('Friendbot only available on testnet');
+    }
+    try {
+      await this.horizon.friendbot(publicKey).call();
+    } catch (err) {
+      console.warn(`Friendbot funding may have failed for ${publicKey}:`, err);
+    }
+  }
+
+  async invokeContract(
+    contractId: string,
+    method: string,
+    args: xdr.ScVal[],
+    sourceKeypair: Keypair,
+  ): Promise<string> {
+    const account = await this.rpc.getAccount(sourceKeypair.publicKey());
+    const contract = new Address(contractId);
+
+    const scAddr = contract.toScVal();
+
+    const methodSym = xdr.ScVal.scvSymbol(method);
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        SorobanRpc.Operations.extendFootprintTtl({
+          source: sourceKeypair.publicKey(),
+          target: contractId,
+          extendTo: 3110400,
+        }),
+      )
+      .setTimeout(30);
+
+    const contractTx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        SorobanRpc.Operations.invokeContractFunction({
+          contractId,
+          method,
+          args,
+          source: sourceKeypair.publicKey(),
+        }),
+      )
+      .setTimeout(30);
+
+    const simResp = await this.rpc.simulateTransaction(contractTx.build());
+    if (SorobanRpc.isSimulationError(simResp)) {
+      throw new Error(`Simulation error: ${simResp.error}`);
+    }
+
+    const preparedTx = SorobanRpc.assembleTransaction(
+      contractTx.build(),
+      simResp,
+    );
+    preparedTx.sign(sourceKeypair);
+    const sendResp = await this.rpc.sendTransaction(preparedTx.build());
+
+    if (sendResp.status === 'PENDING' || sendResp.status === 'DUPLICATE') {
+      return sendResp.hash!;
+    }
+    throw new Error(`Transaction failed: ${sendResp.status}`);
+  }
+
+  async getAccountBalance(publicKey: string): Promise<string> {
+    const account = await this.horizon.loadAccount(publicKey);
+    const xlmBalance = account.balances.find(
+      (b: any) => b.asset_type === 'native',
+    );
+    return xlmBalance?.balance || '0';
+  }
+
+  createAccount(): { publicKey: string; secretKey: string } {
+    const kp = Keypair.random();
+    return {
+      publicKey: kp.publicKey(),
+      secretKey: kp.secret(),
+    };
+  }
+
+  async createTrustline(
+    assetCode: string,
+    issuerPublicKey: string,
+    sourceKeypair: Keypair,
+  ): Promise<void> {
+    const account = await this.horizon.loadAccount(sourceKeypair.publicKey());
+    const asset = new Horizon.Asset(assetCode, issuerPublicKey);
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        Horizon.Operation.changeTrust({
+          asset,
+          source: sourceKeypair.publicKey(),
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    tx.sign(sourceKeypair);
+    await this.horizon.submitTransaction(tx);
+  }
+}
+
+export const stellarService = new StellarService();

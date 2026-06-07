@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "contracts/payroll-manager",
+    "contracts/payment-stream",
+]
+resolver = "2"
