@@ -1,5 +1,5 @@
 use soroban_sdk::{
-    contract, contractimpl, contracttype, token, Address, BytesN, Env, String, Vec,
+    contract, contractimpl, contracttype, token, Address, Env, String, Vec,
 };
 
 #[contracttype]
@@ -132,7 +132,7 @@ impl PaymentStreamContract {
         }
 
         let now = env.ledger().timestamp();
-        let time_passed = now - stream.last_withdraw_time;
+        let _time_passed = now - stream.last_withdraw_time;
         let earned = if now >= stream.end_time {
             let total_duration = stream.end_time - stream.start_time;
             stream.amount_per_second * (total_duration as i128)
@@ -258,36 +258,38 @@ impl PaymentStreamContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, vec, Env, String};
+    use soroban_sdk::{testutils::Address as _, Env, String};
 
     #[test]
     fn test_create_and_withdraw_stream() {
         let env = Env::default();
         env.mock_all_auths();
 
+        let contract_id = env.register_contract(None, PaymentStreamContract);
+        let client = PaymentStreamContractClient::new(&env, &contract_id);
+
         let sender = Address::generate(&env);
         let recipient = Address::generate(&env);
         let token = Address::generate(&env);
 
-        PaymentStreamContract::initialize(env.clone());
+        client.initialize();
 
-        let stream_id = PaymentStreamContract::create_stream(
-            env.clone(),
-            sender.clone(),
-            recipient.clone(),
-            token.clone(),
-            100,         // 100 units per second
-            1_000_000,   // max 1M units
-            3600,        // 1 hour duration
-            String::from_str(&env, "Monthly salary stream"),
+        let stream_id = client.create_stream(
+            &sender,
+            &recipient,
+            &token,
+            &100i128,
+            &1_000_000i128,
+            &3600u64,
+            &String::from_str(&env, "Monthly salary stream"),
         );
 
-        let stream = PaymentStreamContract::get_stream(env.clone(), stream_id);
+        let stream = client.get_stream(&stream_id);
         assert_eq!(stream.sender, sender);
         assert_eq!(stream.recipient, recipient);
         assert!(!stream.cancelled);
 
-        let streams = PaymentStreamContract::get_recipient_streams(env.clone(), recipient.clone());
+        let streams = client.get_recipient_streams(&recipient);
         assert_eq!(streams.len(), 1);
         assert_eq!(streams.first().unwrap(), stream_id);
     }
@@ -297,29 +299,31 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
 
+        let contract_id = env.register_contract(None, PaymentStreamContract);
+        let client = PaymentStreamContractClient::new(&env, &contract_id);
+
         let sender = Address::generate(&env);
         let recipient = Address::generate(&env);
         let token = Address::generate(&env);
 
-        PaymentStreamContract::initialize(env.clone());
+        client.initialize();
 
-        let stream_id = PaymentStreamContract::create_stream(
-            env.clone(),
-            sender.clone(),
-            recipient.clone(),
-            token.clone(),
-            100,
-            1_000_000,
-            3600,
-            String::from_str(&env, "test"),
+        let stream_id = client.create_stream(
+            &sender,
+            &recipient,
+            &token,
+            &100i128,
+            &1_000_000i128,
+            &3600u64,
+            &String::from_str(&env, "test"),
         );
 
-        PaymentStreamContract::cancel_stream(env.clone(), stream_id);
+        client.cancel_stream(&stream_id);
 
-        let stream = PaymentStreamContract::get_stream(env.clone(), stream_id);
+        let stream = client.get_stream(&stream_id);
         assert!(stream.cancelled);
 
-        let available = PaymentStreamContract::get_available_amount(env.clone(), stream_id);
+        let available = client.get_available_amount(&stream_id);
         assert_eq!(available, 0);
     }
 }

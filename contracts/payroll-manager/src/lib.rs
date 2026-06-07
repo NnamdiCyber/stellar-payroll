@@ -1,7 +1,5 @@
 use soroban_sdk::{
-    auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    contract, contractimpl, contracttype, token, Address, BytesN, Env, IntoVal, Map, String, Symbol,
-    TryFromVal, Vec,
+    contract, contractimpl, contracttype, token, Address, BytesN, Env, String, Vec,
 };
 
 #[contracttype]
@@ -365,7 +363,7 @@ impl PayrollManager {
 
         run.approvals.push_back(signer);
 
-        if run.approvals.len() >= company.min_signers as usize {
+        if run.approvals.len() >= company.min_signers {
             run.status = PayrollStatus::Approved;
         }
 
@@ -524,15 +522,20 @@ mod tests {
     #[test]
     fn test_register_company() {
         let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
         let admin = Address::generate(&env);
         let token = Address::generate(&env);
         let signer1 = Address::generate(&env);
         let signer2 = Address::generate(&env);
         let signers = vec![&env, signer1.clone(), signer2.clone()];
 
-        PayrollManager::register_company(env.clone(), admin.clone(), signers, 2, token.clone());
+        client.register_company(&admin, &signers, &2, &token);
 
-        let company = PayrollManager::get_company(env.clone(), admin.clone());
+        let company = client.get_company(&admin);
         assert_eq!(company.admin, admin);
         assert_eq!(company.min_signers, 2);
         assert!(company.active);
@@ -543,23 +546,24 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
 
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
         let admin = Address::generate(&env);
         let token = Address::generate(&env);
         let contractor_addr = Address::generate(&env);
-        let signers = vec![&env];
+        let signers = vec![&env, admin.clone()];
 
-        PayrollManager::register_company(env.clone(), admin.clone(), signers, 1, token.clone());
+        client.register_company(&admin, &signers, &1, &token);
 
-        PayrollManager::add_contractor(
-            env.clone(),
-            admin.clone(),
-            contractor_addr.clone(),
-            String::from_str(&env, "John Doe"),
-            String::from_str(&env, "john@example.com"),
+        client.add_contractor(
+            &admin,
+            &contractor_addr,
+            &String::from_str(&env, "John Doe"),
+            &String::from_str(&env, "john@example.com"),
         );
 
-        let contractor =
-            PayrollManager::get_contractor(env.clone(), admin.clone(), contractor_addr.clone());
+        let contractor = client.get_contractor(&admin, &contractor_addr);
         assert!(contractor.active);
         assert_eq!(contractor.total_paid, 0);
     }
@@ -569,6 +573,9 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
 
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
         let admin = Address::generate(&env);
         let token = Address::generate(&env);
         let contractor_addr = Address::generate(&env);
@@ -576,47 +583,40 @@ mod tests {
         let signer2 = Address::generate(&env);
         let signers = vec![&env, signer1.clone(), signer2.clone()];
 
-        PayrollManager::register_company(env.clone(), admin.clone(), signers, 2, token.clone());
+        client.register_company(&admin, &signers, &2, &token);
 
-        PayrollManager::add_contractor(
-            env.clone(),
-            admin.clone(),
-            contractor_addr.clone(),
-            String::from_str(&env, "Jane Doe"),
-            String::from_str(&env, "jane@example.com"),
+        client.add_contractor(
+            &admin,
+            &contractor_addr,
+            &String::from_str(&env, "Jane Doe"),
+            &String::from_str(&env, "jane@example.com"),
         );
 
-        let run_id = PayrollManager::create_payroll_run(
-            env.clone(),
-            admin.clone(),
-            1700000000,
-            1700086400,
+        let run_id = client.create_payroll_run(&admin, &1700000000u64, &1700086400u64);
+
+        client.add_payment(
+            &admin,
+            &run_id,
+            &contractor_addr,
+            &1000_000000i128,
+            &token,
+            &String::from_str(&env, "January salary"),
         );
 
-        PayrollManager::add_payment(
-            env.clone(),
-            admin.clone(),
-            run_id,
-            contractor_addr.clone(),
-            1000_000000,
-            token.clone(),
-            String::from_str(&env, "January salary"),
-        );
-
-        let run = PayrollManager::get_payroll_run(env.clone(), run_id);
+        let run = client.get_payroll_run(&run_id);
         assert_eq!(run.status, PayrollStatus::Pending);
         assert_eq!(run.total_amount, 1000_000000);
         assert_eq!(run.payment_count, 1);
 
-        PayrollManager::approve_payroll_run(env.clone(), admin.clone(), run_id, signer1.clone());
+        client.approve_payroll_run(&admin, &run_id, &signer1);
 
-        let run = PayrollManager::get_payroll_run(env.clone(), run_id);
+        let run = client.get_payroll_run(&run_id);
         assert_eq!(run.approvals.len(), 1);
         assert_eq!(run.status, PayrollStatus::Pending);
 
-        PayrollManager::approve_payroll_run(env.clone(), admin.clone(), run_id, signer2.clone());
+        client.approve_payroll_run(&admin, &run_id, &signer2);
 
-        let run = PayrollManager::get_payroll_run(env.clone(), run_id);
+        let run = client.get_payroll_run(&run_id);
         assert_eq!(run.approvals.len(), 2);
         assert_eq!(run.status, PayrollStatus::Approved);
     }

@@ -2,6 +2,9 @@
 
 **Cross-border B2B Payroll & Contractor Payments on Stellar**
 
+StellarPay is an open-source payroll and contractor payment platform built on the Stellar network. It enables companies with global remote teams to pay contractors in multiple currencies with 2–5 second settlement, near-zero fees, and full on-chain audit trails. Two Soroban smart contracts handle batch payroll runs with multisig approval (N-of-M signers) and real-time payment streaming where contractors earn per-second and withdraw on demand. The platform includes a Node.js backend API, a React dashboard for company administrators, and a contractor portal for viewing payment history and active streams. Built for the Stellar Community Fund Build Award, StellarPay targets the $8T+ cross-border B2B payment market with enterprise-grade controls, anchor network integration for fiat on/off ramps, and a clear path to production deployment on Stellar testnet and mainnet.
+
+[![CI](https://github.com/your-org/stellar-payroll/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/stellar-payroll/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Stellar](https://img.shields.io/badge/Stellar-Testnet-0c87f2)](https://stellar.org)
 [![Soroban](https://img.shields.io/badge/Soroban-21-7c3aed)](https://soroban.stellar.org)
