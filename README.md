@@ -572,34 +572,6 @@ Sender (Company)               Payment Stream Contract        Recipient
 
 ---
 
-## SCF Grant Alignment
-
-This project targets the **Stellar Community Fund (SCF) Build Award** — **Open Track**.
-
-### Why SDF will fund this
-
-| Priority | Alignment |
-|---|---|
-| **Cross-border payments** | SDF's #1 2026 priority — core to mission |
-| **$1B asset value growth** | Every payroll run moves real value on Stellar assets |
-| **15 enterprise partners** | B2B payroll is an enterprise sales motion |
-| **Everyday financial services** | Payroll is the most universal financial service |
-| **Soroban smart contracts** | Uses latest tech stack (Protocol 25) |
-| **Multisig / compliance** | Enterprise-grade controls from day one |
-| **Anchor integration** | Leverages Stellar's fiat on/off ramps |
-
-### SCF Details
-
-| Metric | Value |
-|---|---|
-| Award track | Open Track |
-| Max award | $150K in XLM |
-| Next deadline | June 14, 2026 (SCF #44) |
-| Build timeline | 3–5 months (milestone-based) |
-| Audit support | Free via SCF Audit Bank |
-
----
-
 ## Roadmap
 
 ### Phase 1 — MVP (current)
