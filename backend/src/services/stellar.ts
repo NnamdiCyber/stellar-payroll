@@ -1,5 +1,6 @@
 import {
   Asset,
+  Horizon,
   Keypair,
   Operation,
   SorobanRpc,
@@ -16,12 +17,12 @@ import { loadEnv } from '../config/index.js';
 const env = loadEnv();
 
 export class StellarService {
-  private horizon: SorobanRpc.Server;
+  private horizon: Horizon.Server;
   private rpc: SorobanRpc.Server;
   private networkPassphrase: string;
 
   constructor() {
-    this.horizon = new SorobanRpc.Server(env.STELLAR_HORIZON_URL);
+    this.horizon = new Horizon.Server(env.STELLAR_HORIZON_URL);
     this.rpc = new SorobanRpc.Server(env.STELLAR_RPC_URL);
     this.networkPassphrase =
       env.STELLAR_NETWORK === 'mainnet'
@@ -31,7 +32,7 @@ export class StellarService {
           : Networks.STANDALONE;
   }
 
-  getHorizon(): SorobanRpc.Server {
+  getHorizon(): Horizon.Server {
     return this.horizon;
   }
 
@@ -61,11 +62,6 @@ export class StellarService {
     sourceKeypair: Keypair,
   ): Promise<string> {
     const account = await this.rpc.getAccount(sourceKeypair.publicKey());
-    const contract = new Address(contractId);
-
-    const scAddr = contract.toScVal();
-
-    const methodSym = xdr.ScVal.scvSymbol(method);
 
     const contractTx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -73,7 +69,7 @@ export class StellarService {
     })
       .addOperation(
         Operation.invokeContractFunction({
-          contractId,
+          contract: contractId,
           function: method,
           args,
           source: sourceKeypair.publicKey(),

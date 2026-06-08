@@ -205,7 +205,8 @@ export class PayrollService {
       getContractId(),
       xdr.ScVal.scvAddress(new Address(companyAddress).toScAddress()),
     );
-    return scValToNative(result.val.value());
+    const entry: any = result.val.value();
+    return scValToNative(entry.val);
   }
 }
 
