@@ -7,7 +7,6 @@ export function Contractors() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
 
   const [contractors, setContractors] = useState<

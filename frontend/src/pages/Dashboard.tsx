@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import {
   Building2,
   Users,
@@ -46,7 +46,7 @@ function StatCard({
 export function Dashboard() {
   const navigate = useNavigate();
 
-  const { data: account, isPending } = useMutation({
+  const { data: account } = useMutation({
     mutationFn: createTestAccount,
   });
 

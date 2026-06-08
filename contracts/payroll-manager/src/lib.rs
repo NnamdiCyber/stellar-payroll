@@ -111,7 +111,7 @@ impl PayrollManager {
         token: Address,
     ) {
         admin.require_auth();
-        if min_signers == 0 || min_signers > signers.len() as u32 {
+        if min_signers == 0 || min_signers > signers.len() {
             panic!("invalid signer threshold");
         }
         let company = Company { admin: admin.clone(), signers, min_signers, token, active: true };
@@ -131,7 +131,7 @@ impl PayrollManager {
         if !company.active {
             panic!("company is deactivated");
         }
-        if min_signers == 0 || min_signers > signers.len() as u32 {
+        if min_signers == 0 || min_signers > signers.len() {
             panic!("invalid signer threshold");
         }
         company.signers = signers;

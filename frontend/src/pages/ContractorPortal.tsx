@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ExternalLink, Wallet, Clock, ArrowDown } from 'lucide-react';
+import { ExternalLink, Wallet, ArrowDown } from 'lucide-react';
 
 export function ContractorPortal() {
   const [walletAddress, setWalletAddress] = useState('');

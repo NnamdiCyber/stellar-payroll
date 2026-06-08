@@ -1,11 +1,11 @@
 import {
-  Horizon,
+  Asset,
   Keypair,
+  Operation,
   SorobanRpc,
   TransactionBuilder,
   Networks,
   nativeToScVal,
-  scValToNative,
   Address,
   BASE_FEE,
   xdr,
@@ -16,12 +16,12 @@ import { loadEnv } from '../config/index.js';
 const env = loadEnv();
 
 export class StellarService {
-  private horizon: Horizon.Server;
+  private horizon: SorobanRpc.Server;
   private rpc: SorobanRpc.Server;
   private networkPassphrase: string;
 
   constructor() {
-    this.horizon = new Horizon.Server(env.STELLAR_HORIZON_URL);
+    this.horizon = new SorobanRpc.Server(env.STELLAR_HORIZON_URL);
     this.rpc = new SorobanRpc.Server(env.STELLAR_RPC_URL);
     this.networkPassphrase =
       env.STELLAR_NETWORK === 'mainnet'
@@ -31,7 +31,7 @@ export class StellarService {
           : Networks.STANDALONE;
   }
 
-  getHorizon(): Horizon.Server {
+  getHorizon(): SorobanRpc.Server {
     return this.horizon;
   }
 
@@ -67,27 +67,14 @@ export class StellarService {
 
     const methodSym = xdr.ScVal.scvSymbol(method);
 
-    const tx = new TransactionBuilder(account, {
-      fee: BASE_FEE,
-      networkPassphrase: this.networkPassphrase,
-    })
-      .addOperation(
-        SorobanRpc.Operations.extendFootprintTtl({
-          source: sourceKeypair.publicKey(),
-          target: contractId,
-          extendTo: 3110400,
-        }),
-      )
-      .setTimeout(30);
-
     const contractTx = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: this.networkPassphrase,
     })
       .addOperation(
-        SorobanRpc.Operations.invokeContractFunction({
+        Operation.invokeContractFunction({
           contractId,
-          method,
+          function: method,
           args,
           source: sourceKeypair.publicKey(),
         }),
@@ -95,7 +82,7 @@ export class StellarService {
       .setTimeout(30);
 
     const simResp = await this.rpc.simulateTransaction(contractTx.build());
-    if (SorobanRpc.isSimulationError(simResp)) {
+    if (SorobanRpc.Api.isSimulationError(simResp)) {
       throw new Error(`Simulation error: ${simResp.error}`);
     }
 
@@ -103,8 +90,9 @@ export class StellarService {
       contractTx.build(),
       simResp,
     );
-    preparedTx.sign(sourceKeypair);
-    const sendResp = await this.rpc.sendTransaction(preparedTx.build());
+    const prepared = preparedTx.build();
+    prepared.sign(sourceKeypair);
+    const sendResp = await this.rpc.sendTransaction(prepared);
 
     if (sendResp.status === 'PENDING' || sendResp.status === 'DUPLICATE') {
       return sendResp.hash!;
@@ -134,14 +122,14 @@ export class StellarService {
     sourceKeypair: Keypair,
   ): Promise<void> {
     const account = await this.horizon.loadAccount(sourceKeypair.publicKey());
-    const asset = new Horizon.Asset(assetCode, issuerPublicKey);
+    const asset = new Asset(assetCode, issuerPublicKey);
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: this.networkPassphrase,
     })
       .addOperation(
-        Horizon.Operation.changeTrust({
+        Operation.changeTrust({
           asset,
           source: sourceKeypair.publicKey(),
         }),

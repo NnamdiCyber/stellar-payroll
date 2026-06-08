@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DollarSign, Calendar, CheckCircle, Send } from 'lucide-react';
+import { DollarSign, Calendar, Send } from 'lucide-react';
 
 export function Payroll() {
   const [companyAddress, setCompanyAddress] = useState('');

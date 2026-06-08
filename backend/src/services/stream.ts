@@ -98,13 +98,7 @@ export class StreamService {
   async getStream(streamId: number): Promise<any> {
     const result = await stellarService.getRpc().getContractData(
       getContractId(),
-      xdr.LedgerKey.contractData(
-        new xdr.LedgerKeyContractData({
-          contract: new Address(getContractId()).toScAddress(),
-          key: xdr.ScVal.scvU64(streamId),
-          durability: xdr.ContractDataDurability.persistent(),
-        }),
-      ),
+      xdr.ScVal.scvU64(new xdr.Uint64(streamId)),
     );
     return result;
   }

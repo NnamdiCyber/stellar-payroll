@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Waves, Clock, Play, Pause, XCircle } from 'lucide-react';
+import { Waves, Clock, XCircle } from 'lucide-react';
 
 export function PaymentStreams() {
   const [senderSecret, setSenderSecret] = useState('');

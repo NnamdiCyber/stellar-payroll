@@ -1,4 +1,4 @@
-import { Keypair, nativeToScVal, xdr, Address } from '@stellar/stellar-sdk';
+import { Keypair, nativeToScVal, scValToNative, xdr, Address } from '@stellar/stellar-sdk';
 import { stellarService } from './stellar.js';
 import { loadEnv } from '../config/index.js';
 
@@ -203,13 +203,7 @@ export class PayrollService {
   async getCompany(companyAddress: string): Promise<any> {
     const result = await stellarService.getRpc().getContractData(
       getContractId(),
-      xdr.LedgerKey.contractData(
-        new xdr.LedgerKeyContractData({
-          contract: new Address(getContractId()).toScAddress(),
-          key: xdr.ScVal.scvAddress(new Address(companyAddress).toScAddress()),
-          durability: xdr.ContractDataDurability.persistent(),
-        }),
-      ),
+      xdr.ScVal.scvAddress(new Address(companyAddress).toScAddress()),
     );
     return scValToNative(result.val.value());
   }

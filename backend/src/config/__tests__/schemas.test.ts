@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CompanyCreateSchema, ContractorAddSchema } from '../config/schemas';
+import { CompanyCreateSchema, ContractorAddSchema } from '../schemas';
 
 describe('CompanyCreateSchema', () => {
   it('validates a correct payload', () => {

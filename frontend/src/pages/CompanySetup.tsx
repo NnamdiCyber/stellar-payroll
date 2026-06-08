@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Building2, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 
 export function CompanySetup() {
   const [adminSecret, setAdminSecret] = useState('');
