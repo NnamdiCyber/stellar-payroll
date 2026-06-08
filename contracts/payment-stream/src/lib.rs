@@ -1,6 +1,4 @@
-use soroban_sdk::{
-    contract, contractimpl, contracttype, token, Address, Env, String, Vec,
-};
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, String, Vec};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,11 +61,7 @@ impl PaymentStreamContract {
             panic!("duration must be positive");
         }
 
-        let mut next_id: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::NextStreamId)
-            .unwrap();
+        let mut next_id: u64 = env.storage().instance().get(&DataKey::NextStreamId).unwrap();
 
         let now = env.ledger().timestamp();
         let stream = PaymentStream {
@@ -85,9 +79,7 @@ impl PaymentStreamContract {
             memo: memo.clone(),
         };
 
-        env.storage()
-            .instance()
-            .set(&stream_key(next_id), &stream);
+        env.storage().instance().set(&stream_key(next_id), &stream);
 
         let mut sender_streams: Vec<u64> = env
             .storage()
@@ -95,9 +87,7 @@ impl PaymentStreamContract {
             .get(&DataKey::SenderStreams(sender.clone()))
             .unwrap_or(Vec::new(&env));
         sender_streams.push_back(next_id);
-        env.storage()
-            .instance()
-            .set(&DataKey::SenderStreams(sender), &sender_streams);
+        env.storage().instance().set(&DataKey::SenderStreams(sender), &sender_streams);
 
         let mut recipient_streams: Vec<u64> = env
             .storage()
@@ -105,25 +95,18 @@ impl PaymentStreamContract {
             .get(&DataKey::RecipientStreams(recipient.clone()))
             .unwrap_or(Vec::new(&env));
         recipient_streams.push_back(next_id);
-        env.storage()
-            .instance()
-            .set(&DataKey::RecipientStreams(recipient), &recipient_streams);
+        env.storage().instance().set(&DataKey::RecipientStreams(recipient), &recipient_streams);
 
         let id = next_id;
         next_id += 1;
-        env.storage()
-            .instance()
-            .set(&DataKey::NextStreamId, &next_id);
+        env.storage().instance().set(&DataKey::NextStreamId, &next_id);
 
         id
     }
 
     pub fn withdraw(env: Env, stream_id: u64, amount: i128) {
-        let mut stream: PaymentStream = env
-            .storage()
-            .instance()
-            .get(&stream_key(stream_id))
-            .unwrap();
+        let mut stream: PaymentStream =
+            env.storage().instance().get(&stream_key(stream_id)).unwrap();
 
         stream.recipient.require_auth();
 
@@ -155,26 +138,17 @@ impl PaymentStreamContract {
 
         let token_client = token::Client::new(&env, &stream.token);
 
-        token_client.transfer(
-            &stream.sender,
-            &stream.recipient,
-            &withdraw_amount,
-        );
+        token_client.transfer(&stream.sender, &stream.recipient, &withdraw_amount);
 
         stream.withdrawn = total_withdrawn;
         stream.last_withdraw_time = now;
 
-        env.storage()
-            .instance()
-            .set(&stream_key(stream_id), &stream);
+        env.storage().instance().set(&stream_key(stream_id), &stream);
     }
 
     pub fn cancel_stream(env: Env, stream_id: u64) {
-        let mut stream: PaymentStream = env
-            .storage()
-            .instance()
-            .get(&stream_key(stream_id))
-            .unwrap();
+        let mut stream: PaymentStream =
+            env.storage().instance().get(&stream_key(stream_id)).unwrap();
 
         stream.sender.require_auth();
 
@@ -200,24 +174,15 @@ impl PaymentStreamContract {
         }
 
         stream.cancelled = true;
-        env.storage()
-            .instance()
-            .set(&stream_key(stream_id), &stream);
+        env.storage().instance().set(&stream_key(stream_id), &stream);
     }
 
     pub fn get_stream(env: Env, stream_id: u64) -> PaymentStream {
-        env.storage()
-            .instance()
-            .get(&stream_key(stream_id))
-            .unwrap()
+        env.storage().instance().get(&stream_key(stream_id)).unwrap()
     }
 
     pub fn get_available_amount(env: Env, stream_id: u64) -> i128 {
-        let stream: PaymentStream = env
-            .storage()
-            .instance()
-            .get(&stream_key(stream_id))
-            .unwrap();
+        let stream: PaymentStream = env.storage().instance().get(&stream_key(stream_id)).unwrap();
 
         if stream.cancelled {
             return 0;
@@ -248,10 +213,7 @@ impl PaymentStreamContract {
     }
 
     pub fn get_sender_streams(env: Env, sender: Address) -> Vec<u64> {
-        env.storage()
-            .instance()
-            .get(&DataKey::SenderStreams(sender))
-            .unwrap_or(Vec::new(&env))
+        env.storage().instance().get(&DataKey::SenderStreams(sender)).unwrap_or(Vec::new(&env))
     }
 }
 

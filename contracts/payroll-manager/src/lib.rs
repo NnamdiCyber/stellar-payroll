@@ -1,6 +1,4 @@
-use soroban_sdk::{
-    contract, contractimpl, contracttype, token, Address, BytesN, Env, String, Vec,
-};
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, BytesN, Env, String, Vec};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,13 +114,7 @@ impl PayrollManager {
         if min_signers == 0 || min_signers > signers.len() as u32 {
             panic!("invalid signer threshold");
         }
-        let company = Company {
-            admin: admin.clone(),
-            signers,
-            min_signers,
-            token,
-            active: true,
-        };
+        let company = Company { admin: admin.clone(), signers, min_signers, token, active: true };
         env.storage().instance().set(&company_key(&admin), &company);
         env.storage().instance().set(&DataKey::NextRunId, &0u64);
     }
@@ -135,8 +127,7 @@ impl PayrollManager {
         token: Address,
     ) {
         admin.require_auth();
-        let mut company: Company =
-            env.storage().instance().get(&company_key(&admin)).unwrap();
+        let mut company: Company = env.storage().instance().get(&company_key(&admin)).unwrap();
         if !company.active {
             panic!("company is deactivated");
         }
@@ -151,8 +142,7 @@ impl PayrollManager {
 
     pub fn deactivate_company(env: Env, admin: Address) {
         admin.require_auth();
-        let mut company: Company =
-            env.storage().instance().get(&company_key(&admin)).unwrap();
+        let mut company: Company = env.storage().instance().get(&company_key(&admin)).unwrap();
         company.active = false;
         env.storage().instance().set(&company_key(&admin), &company);
     }
@@ -164,11 +154,7 @@ impl PayrollManager {
         name: String,
         email: String,
     ) {
-        let company: Company = env
-            .storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap();
+        let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
         company.admin.require_auth();
 
         let contractor = Contractor {
@@ -178,9 +164,7 @@ impl PayrollManager {
             active: true,
             total_paid: 0,
         };
-        env.storage()
-            .instance()
-            .set(&contractor_key(&company_addr, &contractor_addr), &contractor);
+        env.storage().instance().set(&contractor_key(&company_addr, &contractor_addr), &contractor);
 
         let mut list: Vec<Address> = env
             .storage()
@@ -188,39 +172,21 @@ impl PayrollManager {
             .get(&DataKey::CompanyContractors(company_addr.clone()))
             .unwrap_or(Vec::new(&env));
         list.push_back(contractor_addr);
-        env.storage()
-            .instance()
-            .set(&DataKey::CompanyContractors(company_addr), &list);
+        env.storage().instance().set(&DataKey::CompanyContractors(company_addr), &list);
     }
 
     pub fn remove_contractor(env: Env, company_addr: Address, contractor_addr: Address) {
-        let company: Company = env
-            .storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap();
+        let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
         company.admin.require_auth();
 
-        let mut contractor: Contractor = env
-            .storage()
-            .instance()
-            .get(&contractor_key(&company_addr, &contractor_addr))
-            .unwrap();
+        let mut contractor: Contractor =
+            env.storage().instance().get(&contractor_key(&company_addr, &contractor_addr)).unwrap();
         contractor.active = false;
-        env.storage()
-            .instance()
-            .set(&contractor_key(&company_addr, &contractor_addr), &contractor);
+        env.storage().instance().set(&contractor_key(&company_addr, &contractor_addr), &contractor);
     }
 
-    pub fn get_contractor(
-        env: Env,
-        company_addr: Address,
-        contractor_addr: Address,
-    ) -> Contractor {
-        env.storage()
-            .instance()
-            .get(&contractor_key(&company_addr, &contractor_addr))
-            .unwrap()
+    pub fn get_contractor(env: Env, company_addr: Address, contractor_addr: Address) -> Contractor {
+        env.storage().instance().get(&contractor_key(&company_addr, &contractor_addr)).unwrap()
     }
 
     pub fn get_company_contractors(env: Env, company_addr: Address) -> Vec<Address> {
@@ -236,18 +202,10 @@ impl PayrollManager {
         period_start: u64,
         period_end: u64,
     ) -> u64 {
-        let company: Company = env
-            .storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap();
+        let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
         company.admin.require_auth();
 
-        let mut next_id: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::NextRunId)
-            .unwrap();
+        let mut next_id: u64 = env.storage().instance().get(&DataKey::NextRunId).unwrap();
 
         let payroll_run = PayrollRun {
             id: next_id,
@@ -262,9 +220,7 @@ impl PayrollManager {
             executed_at: 0,
         };
 
-        env.storage()
-            .instance()
-            .set(&payroll_key(next_id), &payroll_run);
+        env.storage().instance().set(&payroll_key(next_id), &payroll_run);
 
         let id = next_id;
         next_id += 1;
@@ -282,18 +238,10 @@ impl PayrollManager {
         currency: Address,
         memo: String,
     ) {
-        let company: Company = env
-            .storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap();
+        let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
         company.admin.require_auth();
 
-        let mut run: PayrollRun = env
-            .storage()
-            .instance()
-            .get(&payroll_key(run_id))
-            .unwrap();
+        let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
 
         if run.status != PayrollStatus::Pending {
             panic!("payroll run not in pending state");
@@ -308,24 +256,16 @@ impl PayrollManager {
             tx_hash: BytesN::from_array(&env, &[0u8; 32]),
         };
 
-        env.storage()
-            .instance()
-            .set(&payment_key(run_id, &contractor_addr), &payment);
+        env.storage().instance().set(&payment_key(run_id, &contractor_addr), &payment);
 
         run.total_amount += amount;
         run.payment_count += 1;
 
-        env.storage()
-            .instance()
-            .set(&payroll_key(run_id), &run);
+        env.storage().instance().set(&payroll_key(run_id), &run);
     }
 
     pub fn approve_payroll_run(env: Env, company_addr: Address, run_id: u64, signer: Address) {
-        let company: Company = env
-            .storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap();
+        let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
 
         signer.require_auth();
 
@@ -340,11 +280,7 @@ impl PayrollManager {
             panic!("not authorized signer");
         }
 
-        let mut run: PayrollRun = env
-            .storage()
-            .instance()
-            .get(&payroll_key(run_id))
-            .unwrap();
+        let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
 
         if run.status != PayrollStatus::Pending {
             panic!("payroll run not pending");
@@ -367,32 +303,20 @@ impl PayrollManager {
             run.status = PayrollStatus::Approved;
         }
 
-        env.storage()
-            .instance()
-            .set(&payroll_key(run_id), &run);
+        env.storage().instance().set(&payroll_key(run_id), &run);
     }
 
     pub fn execute_payroll_run(env: Env, company_addr: Address, run_id: u64) {
-        let company: Company = env
-            .storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap();
+        let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
 
-        let mut run: PayrollRun = env
-            .storage()
-            .instance()
-            .get(&payroll_key(run_id))
-            .unwrap();
+        let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
 
         if run.status != PayrollStatus::Approved {
             panic!("payroll run not approved");
         }
 
         run.status = PayrollStatus::Executing;
-        env.storage()
-            .instance()
-            .set(&payroll_key(run_id), &run);
+        env.storage().instance().set(&payroll_key(run_id), &run);
 
         let contractor_list: Vec<Address> = env
             .storage()
@@ -401,10 +325,8 @@ impl PayrollManager {
             .unwrap_or(Vec::new(&env));
 
         for contractor_addr in contractor_list.iter() {
-            let payment_opt: Option<PaymentEntry> = env
-                .storage()
-                .instance()
-                .get(&payment_key(run_id, &contractor_addr));
+            let payment_opt: Option<PaymentEntry> =
+                env.storage().instance().get(&payment_key(run_id, &contractor_addr));
 
             if let Some(mut payment) = payment_opt {
                 if payment.paid {
@@ -422,9 +344,7 @@ impl PayrollManager {
                 token_client.transfer(&escrow_addr, &payment.contractor, &payment.amount);
 
                 payment.paid = true;
-                env.storage()
-                    .instance()
-                    .set(&payment_key(run_id, &contractor_addr), &payment);
+                env.storage().instance().set(&payment_key(run_id, &contractor_addr), &payment);
 
                 let mut contractor: Contractor = env
                     .storage()
@@ -434,83 +354,49 @@ impl PayrollManager {
                 contractor.total_paid += payment.amount;
                 env.storage()
                     .instance()
-                    .set(
-                        &contractor_key(&company_addr, &contractor_addr),
-                        &contractor,
-                    );
+                    .set(&contractor_key(&company_addr, &contractor_addr), &contractor);
             }
         }
 
         run.status = PayrollStatus::Completed;
         run.executed_at = env.ledger().timestamp();
-        env.storage()
-            .instance()
-            .set(&payroll_key(run_id), &run);
+        env.storage().instance().set(&payroll_key(run_id), &run);
     }
 
     pub fn cancel_payroll_run(env: Env, company_addr: Address, run_id: u64) {
-        let company: Company = env
-            .storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap();
+        let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
         company.admin.require_auth();
 
-        let mut run: PayrollRun = env
-            .storage()
-            .instance()
-            .get(&payroll_key(run_id))
-            .unwrap();
+        let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
 
         if run.status == PayrollStatus::Completed || run.status == PayrollStatus::Failed {
             panic!("cannot cancel completed or failed run");
         }
 
         run.status = PayrollStatus::Cancelled;
-        env.storage()
-            .instance()
-            .set(&payroll_key(run_id), &run);
+        env.storage().instance().set(&payroll_key(run_id), &run);
     }
 
     pub fn deposit_to_escrow(env: Env, company_addr: Address, token: Address, amount: i128) {
-        let company: Company = env
-            .storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap();
+        let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
         company.admin.require_auth();
 
         let token_client = token::Client::new(&env, &token);
         token_client.transfer(&company.admin, &env.current_contract_address(), &amount);
 
-        env.storage()
-            .instance()
-            .set(&DataKey::Escrow, &company.admin);
+        env.storage().instance().set(&DataKey::Escrow, &company.admin);
     }
 
     pub fn get_payroll_run(env: Env, run_id: u64) -> PayrollRun {
-        env.storage()
-            .instance()
-            .get(&payroll_key(run_id))
-            .unwrap()
+        env.storage().instance().get(&payroll_key(run_id)).unwrap()
     }
 
-    pub fn get_payment(
-        env: Env,
-        run_id: u64,
-        contractor_addr: Address,
-    ) -> PaymentEntry {
-        env.storage()
-            .instance()
-            .get(&payment_key(run_id, &contractor_addr))
-            .unwrap()
+    pub fn get_payment(env: Env, run_id: u64, contractor_addr: Address) -> PaymentEntry {
+        env.storage().instance().get(&payment_key(run_id, &contractor_addr)).unwrap()
     }
 
     pub fn get_company(env: Env, company_addr: Address) -> Company {
-        env.storage()
-            .instance()
-            .get(&company_key(&company_addr))
-            .unwrap()
+        env.storage().instance().get(&company_key(&company_addr)).unwrap()
     }
 }
 
