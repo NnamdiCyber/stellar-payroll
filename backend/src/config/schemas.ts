@@ -8,6 +8,7 @@ export const CompanyCreateSchema = z.object({
 });
 
 export const ContractorAddSchema = z.object({
+  adminSecretKey: z.string().min(1, 'Admin secret key is required'),
   companyAddress: z.string().min(1),
   contractorAddress: z.string().min(1),
   name: z.string().min(1),
@@ -15,12 +16,14 @@ export const ContractorAddSchema = z.object({
 });
 
 export const PayrollCreateSchema = z.object({
+  adminSecretKey: z.string().min(1, 'Admin secret key is required'),
   companyAddress: z.string().min(1),
   periodStart: z.number().int().positive(),
   periodEnd: z.number().int().positive(),
 });
 
 export const PaymentAddSchema = z.object({
+  adminSecretKey: z.string().min(1, 'Admin secret key is required'),
   companyAddress: z.string().min(1),
   runId: z.number().int().min(0),
   contractorAddress: z.string().min(1),

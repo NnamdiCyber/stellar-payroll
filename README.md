@@ -277,6 +277,7 @@ curl -s -X POST http://localhost:3000/api/v1/payroll/companies \
 curl -s -X POST http://localhost:3000/api/v1/payroll/contractors \
   -H 'Content-Type: application/json' \
   -d '{
+    "adminSecretKey": "ADMIN_SECRET_KEY",
     "companyAddress": "COMPANY_PUBLIC_KEY",
     "contractorAddress": "CONTRACTOR_PUBLIC_KEY",
     "name": "Jane Doe",
@@ -287,6 +288,7 @@ curl -s -X POST http://localhost:3000/api/v1/payroll/contractors \
 curl -s -X POST http://localhost:3000/api/v1/payroll/runs \
   -H 'Content-Type: application/json' \
   -d '{
+    "adminSecretKey": "ADMIN_SECRET_KEY",
     "companyAddress": "COMPANY_PUBLIC_KEY",
     "periodStart": 1747000000,
     "periodEnd": 1747086400
@@ -296,6 +298,7 @@ curl -s -X POST http://localhost:3000/api/v1/payroll/runs \
 curl -s -X POST http://localhost:3000/api/v1/payroll/payments \
   -H 'Content-Type: application/json' \
   -d '{
+    "adminSecretKey": "ADMIN_SECRET_KEY",
     "companyAddress": "COMPANY_PUBLIC_KEY",
     "runId": 0,
     "contractorAddress": "CONTRACTOR_PUBLIC",

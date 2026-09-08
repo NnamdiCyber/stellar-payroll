@@ -5,6 +5,7 @@ import {
   StreamWithdrawSchema,
   StreamCancelSchema,
 } from '../config/schemas.js';
+import { toErrorMessage } from '../config/zod.js';
 
 export const streamRoutes = Router();
 
@@ -24,8 +25,8 @@ streamRoutes.post('/', async (req: Request, res: Response) => {
       success: true,
       data: result,
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -44,8 +45,8 @@ streamRoutes.post('/:streamId/withdraw', async (req: Request, res: Response) => 
       success: true,
       data: { transactionHash: txHash },
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -63,8 +64,8 @@ streamRoutes.post('/:streamId/cancel', async (req: Request, res: Response) => {
       success: true,
       data: { transactionHash: txHash },
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -74,7 +75,7 @@ streamRoutes.get('/:streamId', async (req: Request, res: Response) => {
       parseInt(req.params.streamId),
     );
     res.json({ success: true, data: stream });
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(404).json({ error: true, message: 'Stream not found' });
   }
 });

@@ -22,6 +22,7 @@ describe('CompanyCreateSchema', () => {
 describe('ContractorAddSchema', () => {
   it('validates with valid email', () => {
     const result = ContractorAddSchema.parse({
+      adminSecretKey: 'SC4uR3K...',
       companyAddress: 'GA...',
       contractorAddress: 'GB...',
       name: 'Jane Doe',
@@ -33,6 +34,7 @@ describe('ContractorAddSchema', () => {
   it('rejects invalid email', () => {
     expect(() =>
       ContractorAddSchema.parse({
+        adminSecretKey: 'SC4uR3K...',
         companyAddress: 'GA...',
         contractorAddress: 'GB...',
         name: 'Jane',

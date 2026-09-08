@@ -8,6 +8,7 @@ import {
   PayrollApproveSchema,
 } from '../config/schemas.js';
 import { stellarService } from '../services/stellar.js';
+import { toErrorMessage } from '../config/zod.js';
 
 export const payrollRoutes = Router();
 
@@ -24,8 +25,8 @@ payrollRoutes.post('/companies', async (req: Request, res: Response) => {
       success: true,
       data: result,
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -37,31 +38,35 @@ payrollRoutes.post('/contractors', async (req: Request, res: Response) => {
       body.contractorAddress,
       body.name,
       body.email,
-      body.companyAddress,
+      body.adminSecretKey,
     );
     res.status(201).json({
       success: true,
       data: { transactionHash: txHash },
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
 payrollRoutes.delete('/contractors/:companyAddr/:contractorAddr', async (req: Request, res: Response) => {
   try {
     const { companyAddr, contractorAddr } = req.params;
+    const authorization = req.headers.authorization ?? '';
+    const adminSecretKey = authorization.startsWith('Bearer ')
+      ? authorization.slice('Bearer '.length)
+      : authorization;
     const txHash = await payrollService.removeContractor(
       companyAddr,
       contractorAddr,
-      req.headers.authorization || '',
+      adminSecretKey,
     );
     res.json({
       success: true,
       data: { transactionHash: txHash },
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -72,14 +77,14 @@ payrollRoutes.post('/runs', async (req: Request, res: Response) => {
       body.companyAddress,
       body.periodStart,
       body.periodEnd,
-      body.companyAddress,
+      body.adminSecretKey,
     );
     res.status(201).json({
       success: true,
       data: result,
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -93,14 +98,14 @@ payrollRoutes.post('/payments', async (req: Request, res: Response) => {
       body.amount,
       body.currency,
       body.memo,
-      body.companyAddress,
+      body.adminSecretKey,
     );
     res.status(201).json({
       success: true,
       data: { transactionHash: txHash },
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -116,8 +121,8 @@ payrollRoutes.post('/runs/approve', async (req: Request, res: Response) => {
       success: true,
       data: { transactionHash: txHash },
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -140,8 +145,8 @@ payrollRoutes.post('/runs/:runId/execute', async (req: Request, res: Response) =
       success: true,
       data: { transactionHash: txHash },
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(400).json({ error: true, message: toErrorMessage(err) });
   }
 });
 
@@ -149,7 +154,7 @@ payrollRoutes.get('/companies/:address', async (req: Request, res: Response) => 
   try {
     const company = await payrollService.getCompany(req.params.address);
     res.json({ success: true, data: company });
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(404).json({ error: true, message: 'Company not found' });
   }
 });
@@ -164,7 +169,7 @@ payrollRoutes.post('/accounts/create', async (req: Request, res: Response) => {
       success: true,
       data: account,
     });
-  } catch (err: any) {
-    res.status(500).json({ error: true, message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: true, message: toErrorMessage(err) });
   }
 });
