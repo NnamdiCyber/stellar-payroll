@@ -167,7 +167,7 @@ struct PaymentEntry {
 | `create_payroll_run(company, period_start, period_end)` | admin | Start a new payroll batch |
 | `add_payment(company, run_id, contractor, amount, currency, memo)` | admin | Add a payment entry to a run |
 | `approve_payroll_run(company, run_id, signer)` | signer | Approve a run (N-of-M threshold) |
-| `execute_payroll_run(company, run_id)` | any signer | Execute all payments in approved run |
+| `execute_payroll_run(company, run_id, signer)` | any signer | Execute all payments in approved run |
 | `cancel_payroll_run(company, run_id)` | admin | Cancel a pending run |
 | `deposit_to_escrow(company, token, amount)` | admin | Pre-fund the escrow pool |
 

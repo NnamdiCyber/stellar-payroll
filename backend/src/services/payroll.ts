@@ -190,6 +190,7 @@ export class PayrollService {
     const args = [
       scvAddress(companyAddress),
       scvU64(runId),
+      scvAddress(signerKp.publicKey()),
     ];
 
     return stellarService.invokeContract(

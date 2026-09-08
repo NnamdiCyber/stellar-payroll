@@ -85,6 +85,19 @@ fn payment_key(run_id: u64, contractor: &Address) -> DataKey {
     DataKey::Payment(run_id, contractor.clone())
 }
 
+fn require_active(company: &Company) {
+    if !company.active {
+        panic!("company is deactivated");
+    }
+}
+
+fn require_authorized_signer(company: &Company, addr: &Address) {
+    if addr == &company.admin || company.signers.iter().any(|s| s == *addr) {
+        return;
+    }
+    panic!("not authorized signer");
+}
+
 #[contract]
 pub struct PayrollManager;
 
@@ -114,6 +127,9 @@ impl PayrollManager {
         if min_signers == 0 || min_signers > signers.len() {
             panic!("invalid signer threshold");
         }
+        if env.storage().instance().has(&company_key(&admin)) {
+            panic!("company already registered");
+        }
         let company = Company { admin: admin.clone(), signers, min_signers, token, active: true };
         env.storage().instance().set(&company_key(&admin), &company);
         env.storage().instance().set(&DataKey::NextRunId, &0u64);
@@ -128,9 +144,7 @@ impl PayrollManager {
     ) {
         admin.require_auth();
         let mut company: Company = env.storage().instance().get(&company_key(&admin)).unwrap();
-        if !company.active {
-            panic!("company is deactivated");
-        }
+        require_active(&company);
         if min_signers == 0 || min_signers > signers.len() {
             panic!("invalid signer threshold");
         }
@@ -143,6 +157,7 @@ impl PayrollManager {
     pub fn deactivate_company(env: Env, admin: Address) {
         admin.require_auth();
         let mut company: Company = env.storage().instance().get(&company_key(&admin)).unwrap();
+        require_active(&company);
         company.active = false;
         env.storage().instance().set(&company_key(&admin), &company);
     }
@@ -155,7 +170,15 @@ impl PayrollManager {
         email: String,
     ) {
         let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
+        require_active(&company);
         company.admin.require_auth();
+
+        if name.is_empty() {
+            panic!("name must not be empty");
+        }
+        if env.storage().instance().has(&contractor_key(&company_addr, &contractor_addr)) {
+            panic!("contractor already exists");
+        }
 
         let contractor = Contractor {
             wallet: contractor_addr.clone(),
@@ -177,6 +200,7 @@ impl PayrollManager {
 
     pub fn remove_contractor(env: Env, company_addr: Address, contractor_addr: Address) {
         let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
+        require_active(&company);
         company.admin.require_auth();
 
         let mut contractor: Contractor =
@@ -203,7 +227,15 @@ impl PayrollManager {
         period_end: u64,
     ) -> u64 {
         let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
+        require_active(&company);
         company.admin.require_auth();
+
+        if period_start == 0 {
+            panic!("period_start must be set");
+        }
+        if period_end <= period_start {
+            panic!("period_end must be after period_start");
+        }
 
         let mut next_id: u64 = env.storage().instance().get(&DataKey::NextRunId).unwrap();
 
@@ -239,12 +271,19 @@ impl PayrollManager {
         memo: String,
     ) {
         let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
+        require_active(&company);
         company.admin.require_auth();
 
         let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
 
+        if run.company != company_addr {
+            panic!("run does not belong to company");
+        }
         if run.status != PayrollStatus::Pending {
             panic!("payroll run not in pending state");
+        }
+        if amount <= 0 {
+            panic!("payment amount must be positive");
         }
 
         let payment = PaymentEntry {
@@ -266,22 +305,16 @@ impl PayrollManager {
 
     pub fn approve_payroll_run(env: Env, company_addr: Address, run_id: u64, signer: Address) {
         let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
+        require_active(&company);
 
         signer.require_auth();
-
-        let mut is_authorized = false;
-        for s in company.signers.iter() {
-            if s == signer {
-                is_authorized = true;
-                break;
-            }
-        }
-        if !is_authorized && signer != company.admin {
-            panic!("not authorized signer");
-        }
+        require_authorized_signer(&company, &signer);
 
         let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
 
+        if run.company != company_addr {
+            panic!("run does not belong to company");
+        }
         if run.status != PayrollStatus::Pending {
             panic!("payroll run not pending");
         }
@@ -306,11 +339,18 @@ impl PayrollManager {
         env.storage().instance().set(&payroll_key(run_id), &run);
     }
 
-    pub fn execute_payroll_run(env: Env, company_addr: Address, run_id: u64) {
+    pub fn execute_payroll_run(env: Env, company_addr: Address, run_id: u64, signer: Address) {
         let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
+        require_active(&company);
+
+        signer.require_auth();
+        require_authorized_signer(&company, &signer);
 
         let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
 
+        if run.company != company_addr {
+            panic!("run does not belong to company");
+        }
         if run.status != PayrollStatus::Approved {
             panic!("payroll run not approved");
         }
@@ -339,7 +379,7 @@ impl PayrollManager {
                     .storage()
                     .instance()
                     .get::<_, Address>(&DataKey::Escrow)
-                    .unwrap_or(company.admin.clone());
+                    .unwrap_or(env.current_contract_address());
 
                 token_client.transfer(&escrow_addr, &payment.contractor, &payment.amount);
 
@@ -365,9 +405,14 @@ impl PayrollManager {
 
     pub fn cancel_payroll_run(env: Env, company_addr: Address, run_id: u64) {
         let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
+        require_active(&company);
         company.admin.require_auth();
 
         let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
+
+        if run.company != company_addr {
+            panic!("run does not belong to company");
+        }
 
         if run.status == PayrollStatus::Completed || run.status == PayrollStatus::Failed {
             panic!("cannot cancel completed or failed run");
@@ -379,12 +424,17 @@ impl PayrollManager {
 
     pub fn deposit_to_escrow(env: Env, company_addr: Address, token: Address, amount: i128) {
         let company: Company = env.storage().instance().get(&company_key(&company_addr)).unwrap();
+        require_active(&company);
         company.admin.require_auth();
+
+        if amount <= 0 {
+            panic!("deposit amount must be positive");
+        }
 
         let token_client = token::Client::new(&env, &token);
         token_client.transfer(&company.admin, &env.current_contract_address(), &amount);
 
-        env.storage().instance().set(&DataKey::Escrow, &company.admin);
+        env.storage().instance().set(&DataKey::Escrow, &env.current_contract_address());
     }
 
     pub fn get_payroll_run(env: Env, run_id: u64) -> PayrollRun {
@@ -505,5 +555,144 @@ mod tests {
         let run = client.get_payroll_run(&run_id);
         assert_eq!(run.approvals.len(), 2);
         assert_eq!(run.status, PayrollStatus::Approved);
+    }
+
+    #[test]
+    fn test_register_company_rejects_duplicate() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        client.register_company(&admin, &signers, &1, &token);
+
+        let result = client.try_register_company(&admin, &signers, &1, &token);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_payroll_run_requires_valid_period() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        client.register_company(&admin, &signers, &1, &token);
+
+        let unset_start = client.try_create_payroll_run(&admin, &0u64, &10u64);
+        assert!(unset_start.is_err());
+
+        let inverted = client.try_create_payroll_run(&admin, &100u64, &100u64);
+        assert!(inverted.is_err());
+
+        let zero_period = client.try_create_payroll_run(&admin, &50u64, &100u64);
+        assert!(zero_period.is_ok());
+    }
+
+    #[test]
+    fn test_add_payment_rejects_nonpositive_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let contractor_addr = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        client.register_company(&admin, &signers, &1, &token);
+        client.add_contractor(
+            &admin,
+            &contractor_addr,
+            &String::from_str(&env, "John Doe"),
+            &String::from_str(&env, "john@example.com"),
+        );
+        let run_id = client.create_payroll_run(&admin, &1700000000u64, &1700086400u64);
+
+        let zero = client.try_add_payment(
+            &admin,
+            &run_id,
+            &contractor_addr,
+            &0i128,
+            &token,
+            &String::from_str(&env, "zero"),
+        );
+        assert!(zero.is_err());
+
+        let negative = client.try_add_payment(
+            &admin,
+            &run_id,
+            &contractor_addr,
+            &-100i128,
+            &token,
+            &String::from_str(&env, "negative"),
+        );
+        assert!(negative.is_err());
+    }
+
+    #[test]
+    fn test_rejects_cross_company_payroll_run() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin_a = Address::generate(&env);
+        let admin_b = Address::generate(&env);
+        let token = Address::generate(&env);
+        let contractor_addr = Address::generate(&env);
+
+        client.register_company(&admin_a, &vec![&env, admin_a.clone()], &1, &token);
+        client.register_company(&admin_b, &vec![&env, admin_b.clone()], &1, &token);
+
+        let run_id = client.create_payroll_run(&admin_a, &1700000000u64, &1700086400u64);
+
+        let cross = client.try_add_payment(
+            &admin_a,
+            &run_id,
+            &contractor_addr,
+            &100i128,
+            &token,
+            &String::from_str(&env, "cross"),
+        );
+        assert!(cross.is_ok());
+
+        let approve_cross = client.try_approve_payroll_run(&admin_b, &run_id, &admin_b);
+        assert!(approve_cross.is_err());
+
+        let execute_cross = client.try_execute_payroll_run(&admin_b, &run_id, &admin_b);
+        assert!(execute_cross.is_err());
+    }
+
+    #[test]
+    fn test_execute_requires_approved_run() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        client.register_company(&admin, &signers, &1, &token);
+        let run_id = client.create_payroll_run(&admin, &1700000000u64, &1700086400u64);
+
+        let result = client.try_execute_payroll_run(&admin, &run_id, &admin);
+        assert!(result.is_err());
     }
 }
