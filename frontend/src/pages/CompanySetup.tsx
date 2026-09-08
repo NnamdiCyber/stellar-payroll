@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
+import { api, RegisteredCompany } from '../api/client';
 
 export function CompanySetup() {
   const [adminSecret, setAdminSecret] = useState('');
@@ -7,7 +8,7 @@ export function CompanySetup() {
   const [signers, setSigners] = useState<string[]>(['']);
   const [minSigners, setMinSigners] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<RegisteredCompany | null>(null);
   const [error, setError] = useState('');
 
   function addSigner() {
@@ -31,21 +32,15 @@ export function CompanySetup() {
     setResult(null);
 
     try {
-      const res = await fetch('/api/v1/payroll/companies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adminSecretKey: adminSecret,
-          signers: signers.filter(Boolean),
-          minSigners,
-          tokenAddress,
-        }),
+      const data = await api.registerCompany({
+        adminSecretKey: adminSecret,
+        signers: signers.filter(Boolean),
+        minSigners,
+        tokenAddress,
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message);
-      setResult(data.data);
-    } catch (err: any) {
-      setError(err.message);
+      setResult(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setLoading(false);
     }

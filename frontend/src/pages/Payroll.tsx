@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { DollarSign, Calendar, Send } from 'lucide-react';
+import { api } from '../api/client';
 
 export function Payroll() {
+  const [adminSecret, setAdminSecret] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
+  const [error, setError] = useState('');
   const [runs, setRuns] = useState<
     Array<{
       id: number;
@@ -19,31 +22,25 @@ export function Payroll() {
     const periodEnd = Math.floor(Date.now() / 1000);
 
     try {
-      const res = await fetch('/api/v1/payroll/runs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyAddress,
-          periodStart,
-          periodEnd,
-        }),
+      const data = await api.createRun({
+        adminSecretKey: adminSecret,
+        companyAddress,
+        periodStart,
+        periodEnd,
       });
-      const data = await res.json();
-      if (data.success) {
-        setRuns([
-          {
-            id: runs.length + 1,
-            periodStart: new Date(periodStart * 1000).toLocaleDateString(),
-            periodEnd: new Date(periodEnd * 1000).toLocaleDateString(),
-            status: 'Pending',
-            totalAmount: '—',
-            paymentCount: 0,
-          },
-          ...runs,
-        ]);
-      }
-    } catch (err) {
-      console.error(err);
+      setRuns([
+        {
+          id: data.runId,
+          periodStart: new Date(periodStart * 1000).toLocaleDateString(),
+          periodEnd: new Date(periodEnd * 1000).toLocaleDateString(),
+          status: 'Pending',
+          totalAmount: '—',
+          paymentCount: 0,
+        },
+        ...runs,
+      ]);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create run');
     }
   }
 
@@ -64,7 +61,21 @@ export function Payroll() {
         </p>
       </div>
 
-      <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-6">
+      <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-6 space-y-4">
+        {error && (
+          <div className="p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-400">
+            {error}
+          </div>
+        )}
+        <div className="flex items-center gap-4">
+          <input
+            type="password"
+            value={adminSecret}
+            onChange={(e) => setAdminSecret(e.target.value)}
+            className="flex-1 px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+            placeholder="Admin secret key (S...)"
+          />
+        </div>
         <div className="flex items-center gap-4">
           <input
             type="text"

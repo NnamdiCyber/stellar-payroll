@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Waves, Clock, XCircle } from 'lucide-react';
+import { api } from '../api/client';
 
 export function PaymentStreams() {
   const [senderSecret, setSenderSecret] = useState('');
@@ -25,25 +26,19 @@ export function PaymentStreams() {
     setError('');
 
     try {
-      const res = await fetch('/api/v1/streams', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          senderSecretKey: senderSecret,
-          recipientAddress: recipient,
-          tokenAddress: token,
-          amountPerSecond: amountPerSec,
-          maxAmount: maxAmount,
-          durationSeconds: parseInt(duration),
-          memo: `Stream to ${recipient.slice(0, 8)}`,
-        }),
+      const data = await api.createStream({
+        senderSecretKey: senderSecret,
+        recipientAddress: recipient,
+        tokenAddress: token,
+        amountPerSecond: amountPerSec,
+        maxAmount: maxAmount,
+        durationSeconds: parseInt(duration),
+        memo: `Stream to ${recipient.slice(0, 8)}`,
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message);
 
       setStreams([
         {
-          id: streams.length + 1,
+          id: data.streamId,
           recipient: recipient,
           amountPerSec: amountPerSec,
           status: 'Active',
@@ -55,8 +50,8 @@ export function PaymentStreams() {
       setAmountPerSec('');
       setMaxAmount('');
       setDuration('');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create stream');
     } finally {
       setLoading(false);
     }

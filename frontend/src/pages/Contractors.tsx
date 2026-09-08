@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Users, Plus, Mail, Wallet, Trash2 } from 'lucide-react';
+import { api } from '../api/client';
 
 export function Contractors() {
+  const [adminSecret, setAdminSecret] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [contractorAddress, setContractorAddress] = useState('');
   const [name, setName] = useState('');
@@ -19,18 +21,13 @@ export function Contractors() {
     setError('');
 
     try {
-      const res = await fetch('/api/v1/payroll/contractors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyAddress,
-          contractorAddress,
-          name,
-          email,
-        }),
+      await api.addContractor({
+        adminSecretKey: adminSecret,
+        companyAddress,
+        contractorAddress,
+        name,
+        email,
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message);
 
       setContractors([
         ...contractors,
@@ -39,8 +36,8 @@ export function Contractors() {
       setContractorAddress('');
       setName('');
       setEmail('');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to add contractor');
     } finally {
       setLoading(false);
     }
@@ -63,6 +60,18 @@ export function Contractors() {
           <div className="flex items-center gap-2 text-stellar-300 text-sm font-medium mb-2">
             <Plus className="w-4 h-4" />
             Add Contractor
+          </div>
+
+          <div>
+            <label className="block text-xs text-stellar-400 mb-1">Admin Secret Key</label>
+            <input
+              type="password"
+              value={adminSecret}
+              onChange={(e) => setAdminSecret(e.target.value)}
+              className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+              placeholder="S. Company admin secret key"
+              required
+            />
           </div>
 
           <div>

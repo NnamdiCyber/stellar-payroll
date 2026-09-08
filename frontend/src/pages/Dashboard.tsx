@@ -1,4 +1,6 @@
-import { useMutation } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { LucideIcon } from 'lucide-react';
 import {
   Building2,
   Users,
@@ -8,15 +10,7 @@ import {
   Send,
   Activity,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-
-const API = '/api/v1';
-
-async function createTestAccount() {
-  const res = await fetch(`${API}/anchor/create-account`, { method: 'POST' });
-  if (!res.ok) throw new Error('Failed to create account');
-  return res.json();
-}
+import { api, AccountData } from '../api/client';
 
 function StatCard({
   icon: Icon,
@@ -24,7 +18,7 @@ function StatCard({
   value,
   sub,
 }: {
-  icon: any;
+  icon: LucideIcon;
   label: string;
   value: string;
   sub?: string;
@@ -45,10 +39,22 @@ function StatCard({
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const [account, setAccount] = useState<AccountData | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
 
-  const { data: account } = useMutation({
-    mutationFn: createTestAccount,
-  });
+  async function handleCreateAccount() {
+    setCreating(true);
+    setError('');
+    try {
+      const data = await api.createTestAccount();
+      setAccount(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create account');
+    } finally {
+      setCreating(false);
+    }
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -125,18 +131,23 @@ export function Dashboard() {
 
         <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-6">
           <h2 className="text-lg font-semibold text-white mb-4">Testnet Account</h2>
-          {account?.data ? (
+          {error && (
+            <div className="p-3 mb-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-400">
+              {error}
+            </div>
+          )}
+          {account ? (
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-stellar-400 block mb-1">Public Key</label>
                 <code className="text-xs bg-stellar-950 px-3 py-2 rounded block truncate text-stellar-200">
-                  {account.data.publicKey}
+                  {account.publicKey}
                 </code>
               </div>
               <div>
                 <label className="text-xs text-stellar-400 block mb-1">Secret Key</label>
                 <code className="text-xs bg-stellar-950 px-3 py-2 rounded block truncate text-stellar-200">
-                  {account.data.secretKey.slice(0, 8)}...
+                  {account.secretKey.slice(0, 8)}...
                 </code>
               </div>
               <div className="text-xs text-stellar-500">
@@ -145,11 +156,11 @@ export function Dashboard() {
             </div>
           ) : (
             <button
-              onClick={() => account?.mutateAsync()}
-              disabled={account?.isPending}
+              onClick={handleCreateAccount}
+              disabled={creating}
               className="w-full px-4 py-3 bg-stellar-600 hover:bg-stellar-500 disabled:bg-stellar-700 rounded-lg text-sm text-white transition-colors"
             >
-              {account?.isPending ? 'Creating...' : 'Create Test Account'}
+              {creating ? 'Creating...' : 'Create Test Account'}
             </button>
           )}
         </div>
