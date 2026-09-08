@@ -1,4 +1,14 @@
-import { Keypair, nativeToScVal, scValToNative, xdr, Address } from '@stellar/stellar-sdk';
+import { Keypair, scValToNative } from '@stellar/stellar-sdk';
+import {
+  scvAddress,
+  scvDataKey,
+  scvString,
+  scvI128,
+  scvU64,
+  scvU32,
+  scvVec,
+  scValFromLedgerEntry,
+} from './scv.js';
 import { stellarService } from './stellar.js';
 import { loadEnv } from '../config/index.js';
 
@@ -9,30 +19,6 @@ function getContractId(): string {
     throw new Error('PAYROLL_CONTRACT_ID not configured');
   }
   return env.PAYROLL_CONTRACT_ID;
-}
-
-function scvAddress(address: string): xdr.ScVal {
-  return new Address(address).toScVal();
-}
-
-function scvString(s: string): xdr.ScVal {
-  return nativeToScVal(s, { type: 'string' });
-}
-
-function scvI128(amount: string): xdr.ScVal {
-  return nativeToScVal(amount, { type: 'i128' });
-}
-
-function scvU64(val: number): xdr.ScVal {
-  return nativeToScVal(val, { type: 'u64' });
-}
-
-function scvU32(val: number): xdr.ScVal {
-  return nativeToScVal(val, { type: 'u32' });
-}
-
-function scvVec(items: xdr.ScVal[]): xdr.ScVal {
-  return xdr.ScVal.scvVec(items);
 }
 
 export class PayrollService {
@@ -121,6 +107,14 @@ export class PayrollService {
       scvU64(periodEnd),
     ];
 
+    const retVal = await stellarService.simulateContractValue(
+      getContractId(),
+      'create_payroll_run',
+      args,
+      adminKp.publicKey(),
+    );
+    const runId = scValToNative(retVal) as number;
+
     const txHash = await stellarService.invokeContract(
       getContractId(),
       'create_payroll_run',
@@ -128,7 +122,7 @@ export class PayrollService {
       adminKp,
     );
 
-    return { runId: 0, transactionHash: txHash };
+    return { runId, transactionHash: txHash };
   }
 
   async addPayment(
@@ -201,14 +195,21 @@ export class PayrollService {
     );
   }
 
-  async getCompany(companyAddress: string): Promise<any> {
+  async getCompany(companyAddress: string): Promise<Company> {
     const result = await stellarService.getRpc().getContractData(
       getContractId(),
-      xdr.ScVal.scvAddress(new Address(companyAddress).toScAddress()),
+      scvDataKey('Company', scvAddress(companyAddress)),
     );
-    const entry: any = result.val.value();
-    return scValToNative(entry.val);
+    return scValToNative(scValFromLedgerEntry(result.val)) as Company;
   }
+}
+
+interface Company {
+  admin: string;
+  signers: string[];
+  min_signers: number;
+  token: string;
+  active: boolean;
 }
 
 export const payrollService = new PayrollService();

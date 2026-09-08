@@ -1,4 +1,12 @@
-import { Keypair, nativeToScVal, xdr, Address } from '@stellar/stellar-sdk';
+import { Keypair, scValToNative } from '@stellar/stellar-sdk';
+import {
+  scvAddress,
+  scvDataKey,
+  scvString,
+  scvI128,
+  scvU64,
+  scValFromLedgerEntry,
+} from './scv.js';
 import { stellarService } from './stellar.js';
 import { loadEnv } from '../config/index.js';
 
@@ -11,20 +19,18 @@ function getContractId(): string {
   return env.STREAM_CONTRACT_ID;
 }
 
-function scvAddress(address: string): xdr.ScVal {
-  return new Address(address).toScVal();
-}
-
-function scvString(s: string): xdr.ScVal {
-  return nativeToScVal(s, { type: 'string' });
-}
-
-function scvI128(amount: string): xdr.ScVal {
-  return nativeToScVal(amount, { type: 'i128' });
-}
-
-function scvU64(val: number): xdr.ScVal {
-  return nativeToScVal(val, { type: 'u64' });
+export interface StreamRecord {
+  sender: string;
+  recipient: string;
+  token: string;
+  amount_per_second: bigint;
+  max_amount: bigint;
+  duration: bigint;
+  created_at: bigint;
+  cancelled: boolean;
+  already_withdrawn: bigint;
+  memo: string;
+  total_funded: bigint;
 }
 
 export class StreamService {
@@ -49,6 +55,14 @@ export class StreamService {
       scvString(memo),
     ];
 
+    const retVal = await stellarService.simulateContractValue(
+      getContractId(),
+      'create_stream',
+      args,
+      senderKp.publicKey(),
+    );
+    const streamId = scValToNative(retVal) as number;
+
     const txHash = await stellarService.invokeContract(
       getContractId(),
       'create_stream',
@@ -56,7 +70,7 @@ export class StreamService {
       senderKp,
     );
 
-    return { streamId: 0, transactionHash: txHash };
+    return { streamId, transactionHash: txHash };
   }
 
   async withdraw(
@@ -95,12 +109,12 @@ export class StreamService {
     );
   }
 
-  async getStream(streamId: number): Promise<any> {
+  async getStream(streamId: number): Promise<unknown> {
     const result = await stellarService.getRpc().getContractData(
       getContractId(),
-      xdr.ScVal.scvU64(new xdr.Uint64(streamId)),
+      scvDataKey('Stream', scvU64(streamId)),
     );
-    return result;
+    return scValToNative(scValFromLedgerEntry(result.val));
   }
 }
 

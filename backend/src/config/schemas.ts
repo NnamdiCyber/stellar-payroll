@@ -22,7 +22,7 @@ export const PayrollCreateSchema = z.object({
 
 export const PaymentAddSchema = z.object({
   companyAddress: z.string().min(1),
-  runId: z.number().int().positive(),
+  runId: z.number().int().min(0),
   contractorAddress: z.string().min(1),
   amount: z.string().min(1),
   currency: z.string().min(1),
@@ -31,7 +31,7 @@ export const PaymentAddSchema = z.object({
 
 export const PayrollApproveSchema = z.object({
   companyAddress: z.string().min(1),
-  runId: z.number().int().positive(),
+  runId: z.number().int().min(0),
   signerSecretKey: z.string().min(1),
 });
 
@@ -46,12 +46,12 @@ export const StreamCreateSchema = z.object({
 });
 
 export const StreamWithdrawSchema = z.object({
-  streamId: z.number().int().positive(),
+  streamId: z.number().int().min(0),
   recipientSecretKey: z.string().min(1),
   amount: z.string().min(1),
 });
 
 export const StreamCancelSchema = z.object({
-  streamId: z.number().int().positive(),
+  streamId: z.number().int().min(0),
   senderSecretKey: z.string().min(1),
 });

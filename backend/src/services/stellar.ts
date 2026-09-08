@@ -94,6 +94,46 @@ export class StellarService {
     throw new Error(`Transaction failed: ${sendResp.status}`);
   }
 
+  /**
+   * Simulate a read-only (or dry-run) contract call and return the SCVal
+   * behind it, without signing or submitting anything. Used to resolve
+   * returned identifiers such as run/stream ids.
+   */
+  async simulateContractValue(
+    contractId: string,
+    method: string,
+    args: xdr.ScVal[],
+    source: string,
+  ): Promise<xdr.ScVal> {
+    const account = await this.rpc.getAccount(source);
+
+    const contractTx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: method,
+          args,
+          source,
+        }),
+      )
+      .setTimeout(30);
+
+    const simResp = await this.rpc.simulateTransaction(contractTx.build());
+    if (!SorobanRpc.Api.isSimulationSuccess(simResp)) {
+      throw new Error(
+        `Simulation error: ${SorobanRpc.Api.isSimulationError(simResp) ? simResp.error : 'unknown'}`,
+      );
+    }
+    const retval = simResp.result?.retval;
+    if (!retval) {
+      throw new Error(`Simulation for ${method} returned no result`);
+    }
+    return retval;
+  }
+
   async getAccountBalance(publicKey: string): Promise<string> {
     const account = await this.horizon.loadAccount(publicKey);
     const xlmBalance = account.balances.find(
