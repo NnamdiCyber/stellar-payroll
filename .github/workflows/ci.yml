@@ -12,11 +12,14 @@ env:
 
 jobs:
   contracts:
-    name: Smart Contracts
+    name: Contract (${{ matrix.contract }})
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contracts/payroll-manager
+    strategy:
+      fail-fast: false
+      matrix:
+        contract:
+          - payroll-manager
+          - payment-stream
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -27,16 +30,15 @@ jobs:
 
       - name: Format
         run: cargo fmt -- --check
+        working-directory: contracts/${{ matrix.contract }}
 
       - name: Clippy
         run: cargo clippy --all-targets --features testutils
+        working-directory: contracts/${{ matrix.contract }}
 
       - name: Test
         run: cargo test --features testutils
-
-      # Build requires soroban-cli; uncomment when runner has it installed
-      # - name: Build (release)
-      #   run: soroban contract build
+        working-directory: contracts/${{ matrix.contract }}
 
   backend:
     name: Backend
@@ -82,6 +84,10 @@ jobs:
 
       - name: Lint
         run: npx eslint src --ext .ts,.tsx
+        working-directory: frontend
+
+      - name: Test
+        run: npm test
         working-directory: frontend
 
       - name: Build

@@ -9,12 +9,12 @@ contract-build:
 	cd contracts/payment-stream && cargo build --target wasm32-unknown-unknown --release
 
 contract-test:
-	cd contracts/payroll-manager && cargo test
-	cd contracts/payment-stream && cargo test
+	cd contracts/payroll-manager && cargo test --features testutils
+	cd contracts/payment-stream && cargo test --features testutils
 
 contract-lint:
-	cd contracts/payroll-manager && cargo fmt -- --check && cargo clippy --all-targets
-	cd contracts/payment-stream && cargo fmt -- --check && cargo clippy --all-targets
+	cd contracts/payroll-manager && cargo fmt -- --check && cargo clippy --all-targets --features testutils
+	cd contracts/payment-stream && cargo fmt -- --check && cargo clippy --all-targets --features testutils
 
 contract-fix:
 	cd contracts/payroll-manager && cargo fmt
@@ -51,6 +51,9 @@ frontend-build:
 frontend-lint:
 	cd frontend && npx tsc --noEmit && npx eslint src --ext .ts,.tsx
 
+frontend-test:
+	cd frontend && npm test
+
 # ─── Combined ─────────────────────────────────────────────────────────────────
 
 install: backend-install frontend-install
@@ -59,7 +62,7 @@ dev: backend-dev frontend-dev
 
 build: contract-build backend-build frontend-build
 
-test: contract-test backend-test
+test: contract-test backend-test frontend-test
 
 lint: contract-lint backend-lint frontend-lint
 
@@ -81,7 +84,7 @@ docker-logs:
 
 # ─── Deployment ───────────────────────────────────────────────────────────────
 
-deploy-contracts:
+deploy-contracts: contract-build
 	cd scripts && npx tsx deploy-payroll.ts && npx tsx deploy-stream.ts
 
 # ─── Clean ────────────────────────────────────────────────────────────────────
