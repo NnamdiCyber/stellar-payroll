@@ -9,6 +9,7 @@ pub struct PaymentStream {
     pub token: Address,
     pub amount_per_second: i128,
     pub max_amount: i128,
+    pub total_funded: i128,
     pub start_time: u64,
     pub end_time: u64,
     pub last_withdraw_time: u64,
@@ -28,6 +29,21 @@ pub enum DataKey {
 
 fn stream_key(id: u64) -> DataKey {
     DataKey::Stream(id)
+}
+
+fn compute_earned(env: &Env, stream: &PaymentStream) -> i128 {
+    let now = env.ledger().timestamp();
+    let elapsed = if now >= stream.end_time {
+        stream.end_time - stream.start_time
+    } else {
+        now.saturating_sub(stream.start_time)
+    };
+    stream.amount_per_second * (elapsed as i128)
+}
+
+fn compute_available(stream: &PaymentStream, earned: i128) -> i128 {
+    let cap = stream.max_amount.min(earned);
+    cap.saturating_sub(stream.withdrawn).max(0)
 }
 
 #[contract]
@@ -60,6 +76,13 @@ impl PaymentStreamContract {
         if duration_seconds == 0 {
             panic!("duration must be positive");
         }
+        if recipient == sender {
+            panic!("sender and recipient must differ");
+        }
+
+        let funded = amount_per_second
+            .checked_mul(duration_seconds as i128)
+            .expect("stream funding amount overflow");
 
         let mut next_id: u64 = env.storage().instance().get(&DataKey::NextStreamId).unwrap();
 
@@ -68,16 +91,23 @@ impl PaymentStreamContract {
             id: next_id,
             sender: sender.clone(),
             recipient: recipient.clone(),
-            token,
+            token: token.clone(),
             amount_per_second,
             max_amount,
+            total_funded: funded,
             start_time: now,
-            end_time: now + duration_seconds,
+            end_time: now.saturating_add(duration_seconds),
             last_withdraw_time: now,
             withdrawn: 0,
             cancelled: false,
             memo: memo.clone(),
         };
+
+        // Pre-fund the stream from the sender so the contract can pay out
+        // from its own balance instead of requiring sender authorization on
+        // every withdrawal.
+        let token_client = token::Client::new(&env, &token);
+        token_client.transfer(&sender, &env.current_contract_address(), &funded);
 
         env.storage().instance().set(&stream_key(next_id), &stream);
 
@@ -113,35 +143,24 @@ impl PaymentStreamContract {
         if stream.cancelled {
             panic!("stream is cancelled");
         }
+        if amount <= 0 {
+            panic!("withdrawal amount must be positive");
+        }
 
-        let now = env.ledger().timestamp();
-        let _time_passed = now - stream.last_withdraw_time;
-        let earned = if now >= stream.end_time {
-            let total_duration = stream.end_time - stream.start_time;
-            stream.amount_per_second * (total_duration as i128)
-        } else {
-            let elapsed = now - stream.start_time;
-            stream.amount_per_second * (elapsed as i128)
-        };
-
-        let available = earned - stream.withdrawn;
+        let earned = compute_earned(&env, &stream);
+        let available = compute_available(&stream, earned);
         if available <= 0 {
             panic!("no funds available to withdraw");
         }
 
-        let withdraw_amount = if amount > available { available } else { amount };
-
-        let total_withdrawn = stream.withdrawn + withdraw_amount;
-        if total_withdrawn > stream.max_amount {
-            panic!("exceeds max stream amount");
-        }
+        let withdraw_amount = amount.min(available);
 
         let token_client = token::Client::new(&env, &stream.token);
 
-        token_client.transfer(&stream.sender, &stream.recipient, &withdraw_amount);
+        token_client.transfer(&env.current_contract_address(), &stream.recipient, &withdraw_amount);
 
-        stream.withdrawn = total_withdrawn;
-        stream.last_withdraw_time = now;
+        stream.withdrawn += withdraw_amount;
+        stream.last_withdraw_time = env.ledger().timestamp();
 
         env.storage().instance().set(&stream_key(stream_id), &stream);
     }
@@ -156,21 +175,21 @@ impl PaymentStreamContract {
             panic!("stream already cancelled");
         }
 
-        let now = env.ledger().timestamp();
-        let earned = if now >= stream.end_time {
-            let total_duration = stream.end_time - stream.start_time;
-            stream.amount_per_second * (total_duration as i128)
-        } else {
-            let elapsed = now - stream.start_time;
-            stream.amount_per_second * (elapsed as i128)
-        };
+        let earned = compute_earned(&env, &stream);
+        let available = compute_available(&stream, earned);
 
-        let available = earned - stream.withdrawn;
-        stream.withdrawn += available;
+        let token_client = token::Client::new(&env, &stream.token);
 
+        // Pay the recipient everything earned but not yet withdrawn.
         if available > 0 {
-            let token_client = token::Client::new(&env, &stream.token);
-            token_client.transfer(&stream.sender, &stream.recipient, &available);
+            token_client.transfer(&env.current_contract_address(), &stream.recipient, &available);
+            stream.withdrawn += available;
+        }
+
+        // Refund whatever is left to the sender.
+        let refund = stream.total_funded - stream.withdrawn;
+        if refund > 0 {
+            token_client.transfer(&env.current_contract_address(), &stream.sender, &refund);
         }
 
         stream.cancelled = true;
@@ -188,21 +207,8 @@ impl PaymentStreamContract {
             return 0;
         }
 
-        let now = env.ledger().timestamp();
-        let earned = if now >= stream.end_time {
-            let total_duration = stream.end_time - stream.start_time;
-            stream.amount_per_second * (total_duration as i128)
-        } else {
-            let elapsed = now - stream.start_time;
-            stream.amount_per_second * (elapsed as i128)
-        };
-
-        let available = earned - stream.withdrawn;
-        if available > stream.max_amount - stream.withdrawn {
-            stream.max_amount - stream.withdrawn
-        } else {
-            available
-        }
+        let earned = compute_earned(&env, &stream);
+        compute_available(&stream, earned)
     }
 
     pub fn get_recipient_streams(env: Env, recipient: Address) -> Vec<u64> {
@@ -220,36 +226,81 @@ impl PaymentStreamContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env, String};
+    use soroban_sdk::testutils::{Address as _, Ledger as _};
+    use soroban_sdk::{token, token::StellarAssetClient, Env, String};
+
+    const RATE: i128 = 100;
+    const DURATION: u64 = 3600;
+
+    fn setup(env: &Env) -> (Address, Address, StellarAssetClient<'_>, token::Client<'_>, i128) {
+        let admin = Address::generate(env);
+        let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        let token_client = StellarAssetClient::new(env, &token);
+        let token_query = token::Client::new(env, &token);
+
+        let funded = RATE * (DURATION as i128);
+        token_client.mint(&admin, &(funded * 100));
+
+        (admin, token, token_client, token_query, funded)
+    }
+
+    fn create_client_stream(
+        env: &Env,
+        client: &PaymentStreamContractClient,
+        sender: &Address,
+        recipient: &Address,
+        token: &Address,
+        max_amount: i128,
+    ) -> u64 {
+        client.create_stream(
+            sender,
+            recipient,
+            token,
+            &RATE,
+            &max_amount,
+            &DURATION,
+            &String::from_str(env, "Monthly salary stream"),
+        )
+    }
 
     #[test]
-    fn test_create_and_withdraw_stream() {
+    fn test_create_funds_contract_and_withdraw_pays_out() {
         let env = Env::default();
         env.mock_all_auths();
 
         let contract_id = env.register_contract(None, PaymentStreamContract);
         let client = PaymentStreamContractClient::new(&env, &contract_id);
 
-        let sender = Address::generate(&env);
+        let (admin, token, _token_client, token_query, funded) = setup(&env);
+        let sender = admin.clone();
         let recipient = Address::generate(&env);
-        let token = Address::generate(&env);
 
         client.initialize();
 
-        let stream_id = client.create_stream(
-            &sender,
-            &recipient,
-            &token,
-            &100i128,
-            &1_000_000i128,
-            &3600u64,
-            &String::from_str(&env, "Monthly salary stream"),
-        );
+        let stream_id =
+            create_client_stream(&env, &client, &sender, &recipient, &token, 1_000_000i128);
+
+        // Funding was moved from the sender into the contract at creation.
+        assert_eq!(token_query.balance(&contract_id), funded);
+        assert_eq!(token_query.balance(&recipient), 0);
 
         let stream = client.get_stream(&stream_id);
         assert_eq!(stream.sender, sender);
         assert_eq!(stream.recipient, recipient);
+        assert_eq!(stream.total_funded, funded);
         assert!(!stream.cancelled);
+
+        let elapsed = 1000u64;
+        env.ledger().set_timestamp(env.ledger().timestamp() + elapsed);
+
+        let available = client.get_available_amount(&stream_id);
+        assert_eq!(available, RATE * (elapsed as i128));
+
+        client.withdraw(&stream_id, &40_000i128);
+
+        assert_eq!(token_query.balance(&recipient), 40_000);
+        assert_eq!(token_query.balance(&contract_id), funded - 40_000);
+        assert_eq!(client.get_available_amount(&stream_id), RATE * (elapsed as i128) - 40_000);
 
         let streams = client.get_recipient_streams(&recipient);
         assert_eq!(streams.len(), 1);
@@ -257,35 +308,116 @@ mod tests {
     }
 
     #[test]
-    fn test_cancel_stream() {
+    fn test_withdraw_respects_max_amount_cap() {
         let env = Env::default();
         env.mock_all_auths();
 
         let contract_id = env.register_contract(None, PaymentStreamContract);
         let client = PaymentStreamContractClient::new(&env, &contract_id);
 
-        let sender = Address::generate(&env);
+        let (admin, token, _token_client, token_query, _funded) = setup(&env);
+        let sender = admin.clone();
         let recipient = Address::generate(&env);
-        let token = Address::generate(&env);
 
         client.initialize();
 
-        let stream_id = client.create_stream(
-            &sender,
-            &recipient,
-            &token,
-            &100i128,
-            &1_000_000i128,
-            &3600u64,
-            &String::from_str(&env, "test"),
-        );
+        let stream_id =
+            create_client_stream(&env, &client, &sender, &recipient, &token, 50_000i128);
+
+        // Push the clock past the stream end so earned is fully accrued.
+        env.ledger().set_timestamp(env.ledger().timestamp() + DURATION * 2);
+
+        assert_eq!(client.get_available_amount(&stream_id), 50_000);
+
+        client.withdraw(&stream_id, &i128::MAX);
+
+        assert_eq!(token_query.balance(&recipient), 50_000);
+        assert_eq!(client.get_available_amount(&stream_id), 0);
+    }
+
+    #[test]
+    fn test_cancel_pays_earned_and_refunds_remainder() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PaymentStreamContract);
+        let client = PaymentStreamContractClient::new(&env, &contract_id);
+
+        let (admin, token, _token_client, token_query, funded) = setup(&env);
+        let sender = admin.clone();
+        let recipient = Address::generate(&env);
+
+        client.initialize();
+
+        let stream_id =
+            create_client_stream(&env, &client, &sender, &recipient, &token, 1_000_000i128);
+
+        let elapsed = 1000u64;
+        env.ledger().set_timestamp(env.ledger().timestamp() + elapsed);
+
+        client.withdraw(&stream_id, &30_000i128);
 
         client.cancel_stream(&stream_id);
 
         let stream = client.get_stream(&stream_id);
         assert!(stream.cancelled);
+        assert_eq!(client.get_available_amount(&stream_id), 0);
 
-        let available = client.get_available_amount(&stream_id);
-        assert_eq!(available, 0);
+        // Recipient took 30k via withdraw + 70k earned at cancel = 100k.
+        assert_eq!(token_query.balance(&recipient), 100_000);
+        // Contract keeps nothing: the rest of the funding is returned.
+        assert_eq!(token_query.balance(&contract_id), 0);
+        // Total supply is conserved: minted initially, minus what the
+        // recipient ultimately received.
+        assert_eq!(token_query.balance(&sender), funded * 100 - 100_000);
+    }
+
+    #[test]
+    fn test_rejects_invalid_parameters() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PaymentStreamContract);
+        let client = PaymentStreamContractClient::new(&env, &contract_id);
+
+        let (admin, _token, _token_client, _token_query, _funded) = setup(&env);
+        let sender = admin.clone();
+        let recipient = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        client.initialize();
+
+        let zero_rate = client.try_create_stream(
+            &sender,
+            &recipient,
+            &token,
+            &0i128,
+            &1_000_000i128,
+            &DURATION,
+            &String::from_str(&env, "zero"),
+        );
+        assert!(zero_rate.is_err());
+
+        let zero_duration = client.try_create_stream(
+            &sender,
+            &recipient,
+            &token,
+            &RATE,
+            &1_000_000i128,
+            &0u64,
+            &String::from_str(&env, "zero duration"),
+        );
+        assert!(zero_duration.is_err());
+
+        let self_stream = client.try_create_stream(
+            &sender,
+            &sender,
+            &token,
+            &RATE,
+            &1_000_000i128,
+            &DURATION,
+            &String::from_str(&env, "self"),
+        );
+        assert!(self_stream.is_err());
     }
 }

@@ -211,9 +211,14 @@ Real-time payment streaming — contractors earn per-second, withdraw on demand.
 **Streaming math** (computed in contract):
 
 ```
-earned = rate_per_second × min(now - start, duration)
+funded = amount_per_second × duration     # moved on-chain at creation (escrow)
+earned = min(rate_per_second × elapsed, max_amount)
 available_to_withdraw = earned - already_withdrawn
 ```
+Creating a stream transfers `funded` from the sender into the contract, so the
+contract can pay withdrawals and refunds from its own balance without needing
+sender authorization on every call. Cancelling settles the earned balance to
+the recipient and refunds the unearned remainder to the sender.
 
 ---
 
