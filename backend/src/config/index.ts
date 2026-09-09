@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 export const envSchema = z.object({
-  PORT: z.string().default('3000'),
+  PORT: z.coerce.number().int().positive().default(3000),
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   STELLAR_NETWORK: z.enum(['testnet', 'mainnet', 'local']).default('testnet'),
-  STELLAR_HORIZON_URL: z.string(),
-  STELLAR_RPC_URL: z.string(),
-  PAYROLL_CONTRACT_ID: z.string().optional(),
-  STREAM_CONTRACT_ID: z.string().optional(),
-  DATABASE_URL: z.string(),
+  STELLAR_HORIZON_URL: z.string().url(),
+  STELLAR_RPC_URL: z.string().url(),
+  PAYROLL_CONTRACT_ID: z.string().regex(/^C[A-Z0-9]{55}$/).optional(),
+  STREAM_CONTRACT_ID: z.string().regex(/^C[A-Z0-9]{55}$/).optional(),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 });
 

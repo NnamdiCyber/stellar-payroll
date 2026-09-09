@@ -1,58 +1,50 @@
 import { Router, Request, Response } from 'express';
 import { stellarService } from '../services/stellar.js';
 import { Keypair } from '@stellar/stellar-sdk';
+import {
+  AnchorCreateTrustlineSchema,
+  PublicKeyParamsSchema,
+} from '../config/schemas.js';
+import { ApiError, asyncHandler } from '../middleware/asyncHandler.js';
 
 export const anchorRoutes = Router();
 
-anchorRoutes.post('/create-account', async (req: Request, res: Response) => {
-  try {
+anchorRoutes.post(
+  '/create-account',
+  asyncHandler(async (req: Request, res: Response) => {
     const account = stellarService.createAccount();
-    if (process.env.STELLAR_NETWORK === 'testnet') {
+    if (stellarService.getNetwork() === 'testnet') {
       await stellarService.fundAccount(account.publicKey);
     }
     res.status(201).json({
       success: true,
-      data: {
-        publicKey: account.publicKey,
-        secretKey: account.secretKey,
-      },
+      data: { publicKey: account.publicKey, secretKey: account.secretKey },
     });
-  } catch (err: any) {
-    res.status(500).json({ error: true, message: err.message });
-  }
-});
+  }),
+);
 
-anchorRoutes.get('/balance/:publicKey', async (req: Request, res: Response) => {
-  try {
-    const balance = await stellarService.getAccountBalance(req.params.publicKey);
-    res.json({
-      success: true,
-      data: { publicKey: req.params.publicKey, balance },
-    });
-  } catch (err: any) {
-    res.status(404).json({ error: true, message: 'Account not found' });
-  }
-});
-
-anchorRoutes.post('/create-trustline', async (req: Request, res: Response) => {
-  try {
-    const { assetCode, issuerPublicKey, secretKey } = req.body;
-    if (!assetCode || !issuerPublicKey || !secretKey) {
-      res.status(400).json({
-        error: true,
-        message: 'assetCode, issuerPublicKey, and secretKey required',
-      });
-      return;
+anchorRoutes.get(
+  '/balance/:publicKey',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { publicKey } = PublicKeyParamsSchema.parse(req.params);
+    try {
+      const balance = await stellarService.getAccountBalance(publicKey);
+      res.json({ success: true, data: { publicKey, balance } });
+    } catch (err: unknown) {
+      throw new ApiError(404, 'Account not found');
     }
+  }),
+);
 
-    const kp = Keypair.fromSecret(secretKey);
-    await stellarService.createTrustline(assetCode, issuerPublicKey, kp);
-
+anchorRoutes.post(
+  '/create-trustline',
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = AnchorCreateTrustlineSchema.parse(req.body);
+    const kp = Keypair.fromSecret(body.secretKey);
+    await stellarService.createTrustline(body.assetCode, body.issuerPublicKey, kp);
     res.json({
       success: true,
-      data: { assetCode, issuerPublicKey },
+      data: { assetCode: body.assetCode, issuerPublicKey: body.issuerPublicKey },
     });
-  } catch (err: any) {
-    res.status(400).json({ error: true, message: err.message });
-  }
-});
+  }),
+);

@@ -42,15 +42,15 @@ export class StellarService {
     return this.networkPassphrase;
   }
 
+  getNetwork(): string {
+    return env.STELLAR_NETWORK;
+  }
+
   async fundAccount(publicKey: string): Promise<void> {
     if (env.STELLAR_NETWORK !== 'testnet') {
       throw new Error('Friendbot only available on testnet');
     }
-    try {
-      await this.horizon.friendbot(publicKey).call();
-    } catch (err) {
-      console.warn(`Friendbot funding may have failed for ${publicKey}:`, err);
-    }
+    await this.horizon.friendbot(publicKey).call();
   }
 
   async invokeContract(
@@ -137,7 +137,7 @@ export class StellarService {
   async getAccountBalance(publicKey: string): Promise<string> {
     const account = await this.horizon.loadAccount(publicKey);
     const xlmBalance = account.balances.find(
-      (b: any) => b.asset_type === 'native',
+      (b: Horizon.HorizonApi.BalanceLine) => b.asset_type === 'native',
     );
     return xlmBalance?.balance || '0';
   }

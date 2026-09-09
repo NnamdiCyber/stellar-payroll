@@ -12,9 +12,11 @@ const env = loadEnv();
 
 const app = express();
 
+app.disable('x-powered-by');
+app.set('env', env.NODE_ENV);
 app.use(helmet());
 app.use(cors({ origin: env.CORS_ORIGIN }));
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
