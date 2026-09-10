@@ -1,15 +1,32 @@
 import { useState } from 'react';
-import { ExternalLink, Wallet, ArrowDown } from 'lucide-react';
+import { ExternalLink, Wallet, ArrowDown, AlertTriangle } from 'lucide-react';
+import { api } from '../api/client';
 
 export function ContractorPortal() {
   const [walletAddress, setWalletAddress] = useState('');
   const [view, setView] = useState<'login' | 'dashboard'>('login');
+  const [balance, setBalance] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const mockPayments = [
-    { date: '2026-05-15', amount: '5,000 USDC', status: 'Paid', tx: 'abc...def' },
-    { date: '2026-05-01', amount: '5,000 USDC', status: 'Paid', tx: '123...456' },
-    { date: '2026-04-15', amount: '5,000 USDC', status: 'Paid', tx: '789...012' },
-  ];
+  async function handleConnect() {
+    if (!walletAddress) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api.getBalance(walletAddress);
+      setBalance(data.balance);
+      setView('dashboard');
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Could not load account. Is it funded on this network?',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   if (view === 'login') {
     return (
@@ -34,12 +51,18 @@ export function ContractorPortal() {
             placeholder="Enter your Stellar public key (G...)"
           />
 
+          {error && (
+            <div className="p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
           <button
-            onClick={() => walletAddress && setView('dashboard')}
-            disabled={!walletAddress}
+            onClick={handleConnect}
+            disabled={!walletAddress || loading}
             className="w-full px-4 py-2.5 bg-stellar-600 hover:bg-stellar-500 disabled:bg-stellar-700 rounded-lg text-sm text-white font-medium transition-colors"
           >
-            Connect Wallet
+            {loading ? 'Connecting...' : 'Connect Wallet'}
           </button>
 
           <p className="text-xs text-stellar-500">
@@ -68,50 +91,32 @@ export function ContractorPortal() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-4">
-          <div className="text-xs text-stellar-400 mb-1">Total Received</div>
-          <div className="text-xl font-bold text-white">15,000 USDC</div>
-        </div>
-        <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-4">
-          <div className="text-xs text-stellar-400 mb-1">Active Stream</div>
-          <div className="text-xl font-bold text-white">2.5 USDC/sec</div>
-        </div>
-        <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-4">
-          <div className="text-xs text-stellar-400 mb-1">Next Payment</div>
-          <div className="text-xl font-bold text-white">Jun 1, 2026</div>
+          <div className="text-xs text-stellar-400 mb-1">XLM Balance</div>
+          <div className="text-xl font-bold text-white">
+            {balance !== null ? `${balance} XLM` : '—'}
+          </div>
         </div>
       </div>
 
       <div className="bg-stellar-900 border border-stellar-800 rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-stellar-800 flex items-center justify-between">
+        <div className="p-4 border-b border-stellar-800">
           <h2 className="text-sm font-medium text-stellar-300">Payment History</h2>
-          <span className="text-xs text-stellar-500">3 payments</span>
         </div>
 
-        <div className="divide-y divide-stellar-800">
-          {mockPayments.map((p, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between p-4 hover:bg-stellar-950/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-900/30 rounded-lg">
-                  <ArrowDown className="w-4 h-4 text-green-400" />
-                </div>
-                <div>
-                  <div className="text-sm text-white">{p.amount}</div>
-                  <div className="text-xs text-stellar-500">{p.date}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded border border-green-800">
-                  {p.status}
-                </span>
-                <code className="text-xs text-stellar-500">{p.tx}</code>
-              </div>
-            </div>
-          ))}
+        <div className="p-8 text-center space-y-3">
+          <div className="p-2 bg-yellow-900/30 rounded-lg w-fit mx-auto">
+            <AlertTriangle className="w-5 h-5 text-yellow-400" />
+          </div>
+          <div className="text-sm text-stellar-400">
+            On-chain payment history requires indexing payroll and stream events.
+            Check back soon.
+          </div>
+          <div className="flex items-center justify-center gap-2 text-xs text-stellar-500">
+            <ArrowDown className="w-3 h-3" />
+            Payments are recorded on Stellar and will appear here once indexed.
+          </div>
         </div>
       </div>
     </div>

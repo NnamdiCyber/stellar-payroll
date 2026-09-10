@@ -14,6 +14,7 @@ export function Contractors() {
   const [contractors, setContractors] = useState<
     Array<{ address: string; name: string; email: string }>
   >([]);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -40,6 +41,23 @@ export function Contractors() {
       setError(err instanceof Error ? err.message : 'Failed to add contractor');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRemove(address: string) {
+    if (!adminSecret) {
+      setError('Enter the admin secret key to remove a contractor');
+      return;
+    }
+    setRemoving(address);
+    setError('');
+    try {
+      await api.removeContractor(companyAddress, address, adminSecret);
+      setContractors(contractors.filter((c) => c.address !== address));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to remove contractor');
+    } finally {
+      setRemoving(null);
     }
   }
 
@@ -165,7 +183,12 @@ export function Contractors() {
                     <div className="text-xs text-stellar-400">{c.email}</div>
                     <code className="text-xs text-stellar-500">{c.address.slice(0, 12)}...</code>
                   </div>
-                  <button className="text-stellar-500 hover:text-red-400">
+                  <button
+                    onClick={() => handleRemove(c.address)}
+                    disabled={removing === c.address}
+                    aria-label={`Remove ${c.name}`}
+                    className="text-stellar-500 hover:text-red-400 disabled:opacity-50"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>

@@ -25,6 +25,8 @@ export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
 
+  const network = import.meta.env.VITE_STELLAR_NETWORK ?? 'testnet';
+
   return (
     <div className="flex h-screen bg-stellar-950">
       {/* Mobile overlay */}
@@ -78,6 +80,8 @@ export function Layout() {
       <div className="flex flex-col flex-1 min-w-0">
         <header className="h-16 border-b border-stellar-800 bg-stellar-900/50 backdrop-blur flex items-center px-4 lg:px-6 gap-4">
           <button
+            aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={sidebarOpen}
             className="lg:hidden text-stellar-300"
             onClick={() => setSidebarOpen(!sidebarOpen)}
           >
@@ -86,7 +90,7 @@ export function Layout() {
           <div className="flex-1" />
           <div className="flex items-center gap-2 text-xs text-stellar-400">
             <span className="w-2 h-2 rounded-full bg-green-500" />
-            Testnet
+            {network}
           </div>
         </header>
 

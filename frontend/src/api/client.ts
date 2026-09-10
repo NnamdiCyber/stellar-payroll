@@ -1,4 +1,4 @@
-const BASE = '/api/v1';
+const BASE = import.meta.env.VITE_API_BASE ?? '/api/v1';
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -12,8 +12,11 @@ async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers ?? {}),
+    },
   });
 
   let body: unknown;
@@ -50,8 +53,14 @@ export interface AccountData {
   secretKey: string;
 }
 
+export interface BalanceData {
+  publicKey: string;
+  balance: string;
+}
+
 export const api = {
   createTestAccount: () => request<AccountData>('/anchor/create-account', { method: 'POST' }),
+  getBalance: (publicKey: string) => request<BalanceData>(`/anchor/balance/${publicKey}`),
   registerCompany: (body: {
     adminSecretKey: string;
     signers: string[];
@@ -65,12 +74,33 @@ export const api = {
     name: string;
     email: string;
   }) => request<{ transactionHash: string }>('/payroll/contractors', { method: 'POST', body: JSON.stringify(body) }),
+  removeContractor: (
+    companyAddress: string,
+    contractorAddress: string,
+    adminSecretKey: string,
+  ) =>
+    request<{ transactionHash: string }>(
+      `/payroll/contractors/${companyAddress}/${contractorAddress}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminSecretKey}` },
+      },
+    ),
   createRun: (body: {
     adminSecretKey: string;
     companyAddress: string;
     periodStart: number;
     periodEnd: number;
   }) => request<RegisteredRun>('/payroll/runs', { method: 'POST', body: JSON.stringify(body) }),
+  executeRun: (
+    runId: number,
+    companyAddress: string,
+    signerSecretKey: string,
+  ) =>
+    request<{ transactionHash: string }>(`/payroll/runs/${runId}/execute`, {
+      method: 'POST',
+      body: JSON.stringify({ companyAddress, signerSecretKey }),
+    }),
   createStream: (body: {
     senderSecretKey: string;
     recipientAddress: string;
@@ -80,4 +110,9 @@ export const api = {
     durationSeconds: number;
     memo: string;
   }) => request<CreatedStream>('/streams', { method: 'POST', body: JSON.stringify(body) }),
+  cancelStream: (streamId: number, senderSecretKey: string) =>
+    request<{ transactionHash: string }>(`/streams/${streamId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ senderSecretKey }),
+    }),
 };

@@ -11,6 +11,7 @@ export function PaymentStreams() {
   const [duration, setDuration] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [cancelling, setCancelling] = useState<number | null>(null);
   const [streams, setStreams] = useState<
     Array<{
       id: number;
@@ -54,6 +55,23 @@ export function PaymentStreams() {
       setError(err instanceof Error ? err.message : 'Failed to create stream');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleCancel(streamId: number) {
+    if (!senderSecret) {
+      setError('Enter the sender secret key to cancel a stream');
+      return;
+    }
+    setCancelling(streamId);
+    setError('');
+    try {
+      await api.cancelStream(streamId, senderSecret);
+      setStreams(streams.filter((s) => s.id !== streamId));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel stream');
+    } finally {
+      setCancelling(null);
     }
   }
 
@@ -195,7 +213,12 @@ export function PaymentStreams() {
                     <span className="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded border border-green-800">
                       {s.status}
                     </span>
-                    <button className="text-stellar-500 hover:text-red-400">
+                    <button
+                      onClick={() => handleCancel(s.id)}
+                      disabled={cancelling === s.id}
+                      aria-label={`Cancel stream ${s.id}`}
+                      className="text-stellar-500 hover:text-red-400 disabled:opacity-50"
+                    >
                       <XCircle className="w-4 h-4" />
                     </button>
                   </div>

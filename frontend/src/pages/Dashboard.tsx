@@ -41,6 +41,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [account, setAccount] = useState<AccountData | null>(null);
   const [creating, setCreating] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
   const [error, setError] = useState('');
 
   async function handleCreateAccount() {
@@ -146,12 +147,20 @@ export function Dashboard() {
               </div>
               <div>
                 <label className="text-xs text-stellar-400 block mb-1">Secret Key</label>
-                <code className="text-xs bg-stellar-950 px-3 py-2 rounded block truncate text-stellar-200">
-                  {account.secretKey.slice(0, 8)}...
-                </code>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs bg-stellar-950 px-3 py-2 rounded block truncate text-stellar-200 flex-1">
+                    {showSecret ? account.secretKey : '•••••••••••••••••••••••'}
+                  </code>
+                  <button
+                    onClick={() => setShowSecret(!showSecret)}
+                    className="text-xs text-stellar-400 hover:text-stellar-200 whitespace-nowrap"
+                  >
+                    {showSecret ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
               <div className="text-xs text-stellar-500">
-                Auto-funded via Friendbot. Use this for testing.
+                Testnet only. Never share secret keys in production.
               </div>
             </div>
           ) : (

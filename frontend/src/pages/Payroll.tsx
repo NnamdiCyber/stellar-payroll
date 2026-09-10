@@ -4,8 +4,10 @@ import { api } from '../api/client';
 
 export function Payroll() {
   const [adminSecret, setAdminSecret] = useState('');
+  const [signerSecret, setSignerSecret] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [error, setError] = useState('');
+  const [executing, setExecuting] = useState<number | null>(null);
   const [runs, setRuns] = useState<
     Array<{
       id: number;
@@ -44,6 +46,27 @@ export function Payroll() {
     }
   }
 
+  async function executeRun(id: number) {
+    if (!signerSecret) {
+      setError('Enter a signer secret key to execute the run');
+      return;
+    }
+    setExecuting(id);
+    setError('');
+    try {
+      await api.executeRun(id, companyAddress, signerSecret);
+      setRuns(
+        runs.map((run) =>
+          run.id === id ? { ...run, status: 'Completed' } : run,
+        ),
+      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to execute run');
+    } finally {
+      setExecuting(null);
+    }
+  }
+
   const statusColors: Record<string, string> = {
     Pending: 'text-yellow-400 bg-yellow-900/30 border-yellow-800',
     Approved: 'text-blue-400 bg-blue-900/30 border-blue-800',
@@ -74,6 +97,15 @@ export function Payroll() {
             onChange={(e) => setAdminSecret(e.target.value)}
             className="flex-1 px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
             placeholder="Admin secret key (S...)"
+          />
+        </div>
+        <div className="flex items-center gap-4">
+          <input
+            type="password"
+            value={signerSecret}
+            onChange={(e) => setSignerSecret(e.target.value)}
+            className="flex-1 px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+            placeholder="Signer secret key for approvals / execution (S...)"
           />
         </div>
         <div className="flex items-center gap-4">
@@ -135,9 +167,13 @@ export function Payroll() {
                     {run.status}
                   </span>
                   {run.status === 'Approved' && (
-                    <button className="flex items-center gap-1 text-xs text-stellar-400 hover:text-stellar-200">
+                    <button
+                      onClick={() => executeRun(run.id)}
+                      disabled={executing === run.id}
+                      className="flex items-center gap-1 text-xs text-stellar-400 hover:text-stellar-200 disabled:opacity-50"
+                    >
                       <Send className="w-3 h-3" />
-                      Execute
+                      {executing === run.id ? 'Executing...' : 'Execute'}
                     </button>
                   )}
                 </div>
