@@ -1,4 +1,6 @@
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, token, Address, BytesN, Env, String, Symbol, Vec,
+};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,7 +68,7 @@ pub enum DataKey {
     Payment(u64, Address),
     NextRunId,
     CompanyContractors(Address),
-    Escrow,
+    Escrow(Address, Address),
 }
 
 fn company_key(addr: &Address) -> DataKey {
@@ -85,6 +87,10 @@ fn payment_key(run_id: u64, contractor: &Address) -> DataKey {
     DataKey::Payment(run_id, contractor.clone())
 }
 
+fn escrow_key(company: &Address, token: &Address) -> DataKey {
+    DataKey::Escrow(company.clone(), token.clone())
+}
+
 fn require_active(company: &Company) {
     if !company.active {
         panic!("company is deactivated");
@@ -98,24 +104,15 @@ fn require_authorized_signer(company: &Company, addr: &Address) {
     panic!("not authorized signer");
 }
 
+fn event_symbol(env: &Env, name: &str) -> Symbol {
+    Symbol::new(env, name)
+}
+
 #[contract]
 pub struct PayrollManager;
 
 #[contractimpl]
 impl PayrollManager {
-    pub fn initialize(env: Env, admin: Address, token: Address) {
-        admin.require_auth();
-        let company = Company {
-            admin: admin.clone(),
-            signers: Vec::new(&env),
-            min_signers: 1,
-            token,
-            active: true,
-        };
-        env.storage().instance().set(&company_key(&admin), &company);
-        env.storage().instance().set(&DataKey::NextRunId, &0u64);
-    }
-
     pub fn register_company(
         env: Env,
         admin: Address,
@@ -130,9 +127,23 @@ impl PayrollManager {
         if env.storage().instance().has(&company_key(&admin)) {
             panic!("company already registered");
         }
-        let company = Company { admin: admin.clone(), signers, min_signers, token, active: true };
+        // The run-id counter is global (each run id must be unique on-chain).
+        // Only initialize it once so a newly registered company cannot reset
+        // the counter and overwrite another company's runs.
+        if !env.storage().instance().has(&DataKey::NextRunId) {
+            env.storage().instance().set(&DataKey::NextRunId, &0u64);
+        }
+        let company = Company {
+            admin: admin.clone(),
+            signers,
+            min_signers,
+            token: token.clone(),
+            active: true,
+        };
         env.storage().instance().set(&company_key(&admin), &company);
-        env.storage().instance().set(&DataKey::NextRunId, &0u64);
+
+        env.events()
+            .publish((event_symbol(&env, "company_registered"), admin.clone(), min_signers), token);
     }
 
     pub fn update_company(
@@ -176,13 +187,22 @@ impl PayrollManager {
         if name.is_empty() {
             panic!("name must not be empty");
         }
+        if name.len() > 64 {
+            panic!("name is too long");
+        }
+        if email.is_empty() {
+            panic!("email must not be empty");
+        }
+        if email.len() > 128 {
+            panic!("email is too long");
+        }
         if env.storage().instance().has(&contractor_key(&company_addr, &contractor_addr)) {
             panic!("contractor already exists");
         }
 
         let contractor = Contractor {
             wallet: contractor_addr.clone(),
-            name,
+            name: name.clone(),
             email,
             active: true,
             total_paid: 0,
@@ -194,8 +214,11 @@ impl PayrollManager {
             .instance()
             .get(&DataKey::CompanyContractors(company_addr.clone()))
             .unwrap_or(Vec::new(&env));
-        list.push_back(contractor_addr);
-        env.storage().instance().set(&DataKey::CompanyContractors(company_addr), &list);
+        list.push_back(contractor_addr.clone());
+        env.storage().instance().set(&DataKey::CompanyContractors(company_addr.clone()), &list);
+
+        env.events()
+            .publish((event_symbol(&env, "contractor_added"), company_addr, contractor_addr), name);
     }
 
     pub fn remove_contractor(env: Env, company_addr: Address, contractor_addr: Address) {
@@ -205,8 +228,31 @@ impl PayrollManager {
 
         let mut contractor: Contractor =
             env.storage().instance().get(&contractor_key(&company_addr, &contractor_addr)).unwrap();
+        if !contractor.active {
+            panic!("contractor already removed");
+        }
         contractor.active = false;
         env.storage().instance().set(&contractor_key(&company_addr, &contractor_addr), &contractor);
+
+        // Drop the contractor from the company's list so pending runs no
+        // longer iterate over them at execution time.
+        let list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CompanyContractors(company_addr.clone()))
+            .unwrap_or(Vec::new(&env));
+        let mut retained: Vec<Address> = Vec::new(&env);
+        for addr in list.iter() {
+            if addr != contractor_addr {
+                retained.push_back(addr);
+            }
+        }
+        env.storage().instance().set(&DataKey::CompanyContractors(company_addr.clone()), &retained);
+
+        env.events().publish(
+            (event_symbol(&env, "contractor_removed"), company_addr, contractor_addr),
+            0u32,
+        );
     }
 
     pub fn get_contractor(env: Env, company_addr: Address, contractor_addr: Address) -> Contractor {
@@ -241,7 +287,7 @@ impl PayrollManager {
 
         let payroll_run = PayrollRun {
             id: next_id,
-            company: company_addr,
+            company: company_addr.clone(),
             period_start,
             period_end,
             status: PayrollStatus::Pending,
@@ -257,6 +303,11 @@ impl PayrollManager {
         let id = next_id;
         next_id += 1;
         env.storage().instance().set(&DataKey::NextRunId, &next_id);
+
+        env.events().publish(
+            (event_symbol(&env, "payroll_run_created"), company_addr, id, period_start),
+            period_end,
+        );
 
         id
     }
@@ -285,6 +336,18 @@ impl PayrollManager {
         if amount <= 0 {
             panic!("payment amount must be positive");
         }
+        if currency != company.token {
+            panic!("payment currency must match company token");
+        }
+        if memo.len() > 256 {
+            panic!("memo is too long");
+        }
+        // A contractor can be paid at most once per run. Guard against
+        // duplicate entries silently overwriting the stored payment while
+        // inflating the run total.
+        if env.storage().instance().has(&payment_key(run_id, &contractor_addr)) {
+            panic!("payment already exists for contractor in this run");
+        }
 
         let payment = PaymentEntry {
             contractor: contractor_addr.clone(),
@@ -301,6 +364,11 @@ impl PayrollManager {
         run.payment_count += 1;
 
         env.storage().instance().set(&payroll_key(run_id), &run);
+
+        env.events().publish(
+            (event_symbol(&env, "payment_added"), company_addr, run_id, contractor_addr),
+            amount,
+        );
     }
 
     pub fn approve_payroll_run(env: Env, company_addr: Address, run_id: u64, signer: Address) {
@@ -330,13 +398,18 @@ impl PayrollManager {
             panic!("already approved by this signer");
         }
 
-        run.approvals.push_back(signer);
+        run.approvals.push_back(signer.clone());
 
         if run.approvals.len() >= company.min_signers {
             run.status = PayrollStatus::Approved;
         }
 
         env.storage().instance().set(&payroll_key(run_id), &run);
+
+        env.events().publish(
+            (event_symbol(&env, "payroll_run_approved"), company_addr, run_id),
+            run.approvals.len(),
+        );
     }
 
     pub fn execute_payroll_run(env: Env, company_addr: Address, run_id: u64, signer: Address) {
@@ -355,6 +428,14 @@ impl PayrollManager {
             panic!("payroll run not approved");
         }
 
+        // The escrow balance is tracked per company and per token so a company
+        // can only ever pay out of funds it deposited itself.
+        let mut escrow_balance: i128 =
+            env.storage().instance().get(&escrow_key(&company_addr, &company.token)).unwrap_or(0);
+        if escrow_balance < run.total_amount {
+            panic!("insufficient escrow balance for payroll run");
+        }
+
         run.status = PayrollStatus::Executing;
         env.storage().instance().set(&payroll_key(run_id), &run);
 
@@ -364,6 +445,7 @@ impl PayrollManager {
             .get(&DataKey::CompanyContractors(company_addr.clone()))
             .unwrap_or(Vec::new(&env));
 
+        let mut paid_total: i128 = 0;
         for contractor_addr in contractor_list.iter() {
             let payment_opt: Option<PaymentEntry> =
                 env.storage().instance().get(&payment_key(run_id, &contractor_addr));
@@ -373,15 +455,27 @@ impl PayrollManager {
                     continue;
                 }
 
-                let token_client = token::Client::new(&env, &payment.currency);
-
-                let escrow_addr = env
+                // Soft-deleted contractors (removed before execution) are
+                // skipped even if they were added to this pending run.
+                let contractor: Contractor = env
                     .storage()
                     .instance()
-                    .get::<_, Address>(&DataKey::Escrow)
-                    .unwrap_or(env.current_contract_address());
+                    .get(&contractor_key(&company_addr, &contractor_addr))
+                    .unwrap();
+                if !contractor.active {
+                    continue;
+                }
 
-                token_client.transfer(&escrow_addr, &payment.contractor, &payment.amount);
+                let token_client = token::Client::new(&env, &payment.currency);
+
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    &payment.contractor,
+                    &payment.amount,
+                );
+
+                escrow_balance = escrow_balance.saturating_sub(payment.amount);
+                paid_total += payment.amount;
 
                 payment.paid = true;
                 env.storage().instance().set(&payment_key(run_id, &contractor_addr), &payment);
@@ -398,9 +492,16 @@ impl PayrollManager {
             }
         }
 
+        env.storage().instance().set(&escrow_key(&company_addr, &company.token), &escrow_balance);
+
         run.status = PayrollStatus::Completed;
         run.executed_at = env.ledger().timestamp();
         env.storage().instance().set(&payroll_key(run_id), &run);
+
+        env.events().publish(
+            (event_symbol(&env, "payroll_run_executed"), company_addr, run_id),
+            paid_total,
+        );
     }
 
     pub fn cancel_payroll_run(env: Env, company_addr: Address, run_id: u64) {
@@ -420,6 +521,9 @@ impl PayrollManager {
 
         run.status = PayrollStatus::Cancelled;
         env.storage().instance().set(&payroll_key(run_id), &run);
+
+        env.events()
+            .publish((event_symbol(&env, "payroll_run_cancelled"), company_addr, run_id), 0u32);
     }
 
     pub fn deposit_to_escrow(env: Env, company_addr: Address, token: Address, amount: i128) {
@@ -430,11 +534,21 @@ impl PayrollManager {
         if amount <= 0 {
             panic!("deposit amount must be positive");
         }
+        // Only the company's registered payment token may be escrowed so a
+        // run can never draw on funds deposited in an unrelated asset.
+        if token != company.token {
+            panic!("deposit token must match company token");
+        }
 
         let token_client = token::Client::new(&env, &token);
         token_client.transfer(&company.admin, &env.current_contract_address(), &amount);
 
-        env.storage().instance().set(&DataKey::Escrow, &env.current_contract_address());
+        let mut balance: i128 =
+            env.storage().instance().get(&escrow_key(&company_addr, &token)).unwrap_or(0);
+        balance += amount;
+        env.storage().instance().set(&escrow_key(&company_addr, &token), &balance);
+
+        env.events().publish((event_symbol(&env, "escrow_deposited"), company_addr, token), amount);
     }
 
     pub fn get_payroll_run(env: Env, run_id: u64) -> PayrollRun {
@@ -448,12 +562,17 @@ impl PayrollManager {
     pub fn get_company(env: Env, company_addr: Address) -> Company {
         env.storage().instance().get(&company_key(&company_addr)).unwrap()
     }
+
+    pub fn get_company_balance(env: Env, company_addr: Address, token: Address) -> i128 {
+        env.storage().instance().get(&escrow_key(&company_addr, &token)).unwrap_or(0)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, vec, Env, String};
+    use soroban_sdk::testutils::Ledger as _;
+    use soroban_sdk::{testutils::Address as _, token, vec, Env, String};
 
     #[test]
     fn test_register_company() {
@@ -694,5 +813,268 @@ mod tests {
 
         let result = client.try_execute_payroll_run(&admin, &run_id, &admin);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_duplicate_payment_rejected_does_not_inflate_total() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let contractor_addr = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        client.register_company(&admin, &signers, &1, &token);
+        client.add_contractor(
+            &admin,
+            &contractor_addr,
+            &String::from_str(&env, "John Doe"),
+            &String::from_str(&env, "john@example.com"),
+        );
+        let run_id = client.create_payroll_run(&admin, &1700000000u64, &1700086400u64);
+
+        client.add_payment(
+            &admin,
+            &run_id,
+            &contractor_addr,
+            &100i128,
+            &token,
+            &String::from_str(&env, "first"),
+        );
+
+        let duplicate = client.try_add_payment(
+            &admin,
+            &run_id,
+            &contractor_addr,
+            &999i128,
+            &token,
+            &String::from_str(&env, "duplicate"),
+        );
+        assert!(duplicate.is_err());
+
+        let run = client.get_payroll_run(&run_id);
+        assert_eq!(run.total_amount, 100);
+        assert_eq!(run.payment_count, 1);
+    }
+
+    #[test]
+    fn test_add_payment_rejects_non_company_token() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let other_token = Address::generate(&env);
+        let contractor_addr = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        client.register_company(&admin, &signers, &1, &token);
+        client.add_contractor(
+            &admin,
+            &contractor_addr,
+            &String::from_str(&env, "Jane Doe"),
+            &String::from_str(&env, "jane@example.com"),
+        );
+        let run_id = client.create_payroll_run(&admin, &1700000000u64, &1700086400u64);
+
+        let cross_currency = client.try_add_payment(
+            &admin,
+            &run_id,
+            &contractor_addr,
+            &100i128,
+            &other_token,
+            &String::from_str(&env, "wrong token"),
+        );
+        assert!(cross_currency.is_err());
+    }
+
+    #[test]
+    fn test_escrow_is_per_company() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin_a = Address::generate(&env);
+        let admin_b = Address::generate(&env);
+        let token = env.register_stellar_asset_contract_v2(admin_a.clone()).address();
+        let token_client = token::StellarAssetClient::new(&env, &token);
+
+        client.register_company(&admin_a, &vec![&env, admin_a.clone()], &1, &token);
+        client.register_company(&admin_b, &vec![&env, admin_b.clone()], &1, &token);
+
+        token_client.mint(&admin_a, &1_000_000i128);
+        client.deposit_to_escrow(&admin_a, &token, &500_000i128);
+
+        assert_eq!(client.get_company_balance(&admin_a, &token), 500_000);
+        assert_eq!(client.get_company_balance(&admin_b, &token), 0);
+    }
+
+    #[test]
+    fn test_deposit_rejects_foreign_token() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let other_token = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        client.register_company(&admin, &signers, &1, &token);
+
+        let wrong_token = client.try_deposit_to_escrow(&admin, &other_token, &100i128);
+        assert!(wrong_token.is_err());
+
+        let zero = client.try_deposit_to_escrow(&admin, &token, &0i128);
+        assert!(zero.is_err());
+    }
+
+    #[test]
+    fn test_execute_pays_contractors_and_decrements_escrow() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let contractor_addr = Address::generate(&env);
+        let removed_contractor = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        let token_client = token::StellarAssetClient::new(&env, &token);
+        let token_query = token::Client::new(&env, &token);
+
+        client.register_company(&admin, &signers, &1, &token);
+        token_client.mint(&admin, &2_000_000i128);
+
+        client.add_contractor(
+            &admin,
+            &contractor_addr,
+            &String::from_str(&env, "John Doe"),
+            &String::from_str(&env, "john@example.com"),
+        );
+        client.add_contractor(
+            &admin,
+            &removed_contractor,
+            &String::from_str(&env, "Jane Doe"),
+            &String::from_str(&env, "jane@example.com"),
+        );
+
+        let run_id = client.create_payroll_run(&admin, &1700000000u64, &1700086400u64);
+
+        client.deposit_to_escrow(&admin, &token, &500_000i128);
+        assert_eq!(client.get_company_balance(&admin, &token), 500_000);
+
+        client.add_payment(
+            &admin,
+            &run_id,
+            &contractor_addr,
+            &100_000i128,
+            &token,
+            &String::from_str(&env, "worker"),
+        );
+        client.add_payment(
+            &admin,
+            &run_id,
+            &removed_contractor,
+            &50_000i128,
+            &token,
+            &String::from_str(&env, "departed"),
+        );
+
+        // Remove one contractor before executing; it must not be paid.
+        client.remove_contractor(&admin, &removed_contractor);
+
+        env.ledger().set_timestamp(1_700_100_000);
+
+        client.approve_payroll_run(&admin, &run_id, &admin);
+        client.execute_payroll_run(&admin, &run_id, &admin);
+
+        assert_eq!(token_query.balance(&contractor_addr), 100_000);
+        assert_eq!(token_query.balance(&removed_contractor), 0);
+        assert_eq!(client.get_company_balance(&admin, &token), 400_000);
+
+        let run = client.get_payroll_run(&run_id);
+        assert_eq!(run.status, PayrollStatus::Completed);
+        assert_ne!(run.executed_at, 0);
+    }
+
+    #[test]
+    fn test_execute_fails_without_sufficient_escrow() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let contractor_addr = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        let token_client = token::StellarAssetClient::new(&env, &token);
+
+        client.register_company(&admin, &signers, &1, &token);
+        token_client.mint(&admin, &1_000_000i128);
+
+        client.add_contractor(
+            &admin,
+            &contractor_addr,
+            &String::from_str(&env, "John Doe"),
+            &String::from_str(&env, "john@example.com"),
+        );
+
+        let run_id = client.create_payroll_run(&admin, &1700000000u64, &1700086400u64);
+
+        // Funded with less than what the run intends to pay out.
+        client.deposit_to_escrow(&admin, &token, &10_000i128);
+
+        client.add_payment(
+            &admin,
+            &run_id,
+            &contractor_addr,
+            &100_000i128,
+            &token,
+            &String::from_str(&env, "salary"),
+        );
+
+        client.approve_payroll_run(&admin, &run_id, &admin);
+
+        let result = client.try_execute_payroll_run(&admin, &run_id, &admin);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_second_company_does_not_reset_run_counter() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin_a = Address::generate(&env);
+        let admin_b = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        client.register_company(&admin_a, &vec![&env, admin_a.clone()], &1, &token);
+        let run_id = client.create_payroll_run(&admin_a, &1700000000u64, &1700086400u64);
+        assert_eq!(run_id, 0);
+
+        client.register_company(&admin_b, &vec![&env, admin_b.clone()], &1, &token);
+        let run_id_b = client.create_payroll_run(&admin_b, &1700001000u64, &1700087400u64);
+        assert_eq!(run_id_b, 1);
     }
 }
