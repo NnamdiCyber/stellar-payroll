@@ -137,3 +137,26 @@ export const PublicKeyParamsSchema = z.object({
 export const AddressParamsSchema = z.object({
   address: publicKey,
 });
+
+export const ContractorLookupParamsSchema = z.object({
+  companyAddr: publicKey,
+  contractorAddr: publicKey,
+});
+
+export const PaymentLookupParamsSchema = z.object({
+  runId: z.coerce.number().int().min(0),
+  contractorAddr: publicKey,
+});
+
+export const EscrowBalanceParamsSchema = z.object({
+  companyAddr: publicKey,
+  tokenAddr: contractAddress,
+});
+
+export const RecipientParamsSchema = z.object({
+  recipient: publicKey,
+});
+
+export const SenderParamsSchema = z.object({
+  sender: publicKey,
+});

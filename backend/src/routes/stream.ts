@@ -5,10 +5,34 @@ import {
   StreamWithdrawSchema,
   StreamCancelSchema,
   StreamIdParamsSchema,
+  RecipientParamsSchema,
+  SenderParamsSchema,
 } from '../config/schemas.js';
 import { ApiError, asyncHandler } from '../middleware/asyncHandler.js';
 
 export const streamRoutes = Router();
+
+streamRoutes.get(
+  '/recipient/:recipient',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { recipient } = RecipientParamsSchema.parse(req.params);
+    res.json({
+      success: true,
+      data: await streamService.getRecipientStreams(recipient),
+    });
+  }),
+);
+
+streamRoutes.get(
+  '/sender/:sender',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { sender } = SenderParamsSchema.parse(req.params);
+    res.json({
+      success: true,
+      data: await streamService.getSenderStreams(sender),
+    });
+  }),
+);
 
 streamRoutes.post(
   '/',
@@ -60,7 +84,13 @@ streamRoutes.get(
     const params = StreamIdParamsSchema.parse(req.params);
     try {
       const stream = await streamService.getStream(params.streamId);
-      res.json({ success: true, data: stream });
+      res.json({
+        success: true,
+        data: {
+          ...stream,
+          availableAmount: streamService.getAvailableAmount(stream),
+        },
+      });
     } catch (err: unknown) {
       throw new ApiError(404, 'Stream not found');
     }

@@ -10,6 +10,9 @@ import {
   PayrollExecuteSchema,
   PayrollRunIdParamsSchema,
   AddressParamsSchema,
+  ContractorLookupParamsSchema,
+  PaymentLookupParamsSchema,
+  EscrowBalanceParamsSchema,
 } from '../config/schemas.js';
 import { ApiError, asyncHandler } from '../middleware/asyncHandler.js';
 import { stellarService } from '../services/stellar.js';
@@ -132,6 +135,76 @@ payrollRoutes.get(
       res.json({ success: true, data: company });
     } catch (err: unknown) {
       throw new ApiError(404, 'Company not found');
+    }
+  }),
+);
+
+payrollRoutes.get(
+  '/companies/:address/contractors',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { address: companyAddress } = AddressParamsSchema.parse(req.params);
+    const contractors = await payrollService.getCompanyContractors(companyAddress);
+    res.json({ success: true, data: contractors });
+  }),
+);
+
+payrollRoutes.get(
+  '/companies/:companyAddr/contractors/:contractorAddr',
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = ContractorLookupParamsSchema.parse(req.params);
+    try {
+      const contractor = await payrollService.getContractor(
+        params.companyAddr,
+        params.contractorAddr,
+      );
+      res.json({ success: true, data: contractor });
+    } catch (err: unknown) {
+      throw new ApiError(404, 'Contractor not found');
+    }
+  }),
+);
+
+payrollRoutes.get(
+  '/companies/:companyAddr/balance/:tokenAddr',
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = EscrowBalanceParamsSchema.parse(req.params);
+    try {
+      const balance = await payrollService.getCompanyBalance(
+        params.companyAddr,
+        params.tokenAddr,
+      );
+      res.json({ success: true, data: { balance } });
+    } catch (err: unknown) {
+      throw new ApiError(404, 'Escrow balance not found');
+    }
+  }),
+);
+
+payrollRoutes.get(
+  '/runs/:runId',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { runId } = PayrollRunIdParamsSchema.parse(req.params);
+    try {
+      const run = await payrollService.getPayrollRun(runId);
+      res.json({ success: true, data: run });
+    } catch (err: unknown) {
+      throw new ApiError(404, 'Payroll run not found');
+    }
+  }),
+);
+
+payrollRoutes.get(
+  '/runs/:runId/payments/:contractorAddr',
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = PaymentLookupParamsSchema.parse(req.params);
+    try {
+      const payment = await payrollService.getPayment(
+        params.runId,
+        params.contractorAddr,
+      );
+      res.json({ success: true, data: payment });
+    } catch (err: unknown) {
+      throw new ApiError(404, 'Payment not found');
     }
   }),
 );

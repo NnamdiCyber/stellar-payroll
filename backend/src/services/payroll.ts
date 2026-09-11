@@ -200,7 +200,61 @@ export class PayrollService {
       getContractId(),
       scvDataKey('Company', scvAddress(companyAddress)),
     );
-    return scValToNative(scValFromLedgerEntry(result.val)) as Company;
+    return mapCompany(scValToNative(scValFromLedgerEntry(result.val)));
+  }
+
+  async getContractor(
+    companyAddress: string,
+    contractorAddress: string,
+  ): Promise<Contractor> {
+    const result = await stellarService.getRpc().getContractData(
+      getContractId(),
+      scvDataKey(
+        'Contractor',
+        scvAddress(companyAddress),
+        scvAddress(contractorAddress),
+      ),
+    );
+    return mapContractor(scValToNative(scValFromLedgerEntry(result.val)));
+  }
+
+  async getCompanyContractors(companyAddress: string): Promise<string[]> {
+    const result = await stellarService.getRpc().getContractData(
+      getContractId(),
+      scvDataKey('CompanyContractors', scvAddress(companyAddress)),
+    );
+    const value = scValToNative(scValFromLedgerEntry(result.val));
+    return Array.isArray(value) ? value.map(String) : [];
+  }
+
+  async getPayrollRun(runId: number): Promise<PayrollRun> {
+    const result = await stellarService.getRpc().getContractData(
+      getContractId(),
+      scvDataKey('PayrollRun', scvU64(runId)),
+    );
+    return mapPayrollRun(scValToNative(scValFromLedgerEntry(result.val)));
+  }
+
+  async getPayment(
+    runId: number,
+    contractorAddress: string,
+  ): Promise<PaymentEntry> {
+    const result = await stellarService.getRpc().getContractData(
+      getContractId(),
+      scvDataKey('Payment', scvU64(runId), scvAddress(contractorAddress)),
+    );
+    return mapPayment(scValToNative(scValFromLedgerEntry(result.val)));
+  }
+
+  async getCompanyBalance(
+    companyAddress: string,
+    tokenAddress: string,
+  ): Promise<string> {
+    const result = await stellarService.getRpc().getContractData(
+      getContractId(),
+      scvDataKey('Escrow', scvAddress(companyAddress), scvAddress(tokenAddress)),
+    );
+    return i128ToString(scValToNative(scValFromLedgerEntry(result.val)));
   }
 }
 
@@ -212,4 +266,101 @@ interface Company {
   active: boolean;
 }
 
+interface Contractor {
+  wallet: string;
+  name: string;
+  email: string;
+  active: boolean;
+  total_paid: string;
+}
+
+interface PayrollRun {
+  id: string;
+  company: string;
+  period_start: string;
+  period_end: string;
+  status: string;
+  total_amount: string;
+  payment_count: number;
+  approvals: string[];
+  created_at: string;
+  executed_at: string;
+}
+
+interface PaymentEntry {
+  contractor: string;
+  amount: string;
+  currency: string;
+  memo: string;
+  paid: boolean;
+  tx_hash: string;
+}
+
+function i128ToString(value: unknown): string {
+  return typeof value === 'bigint' ? value.toString() : String(value);
+}
+
+function mapCompany(raw: unknown): Company {
+  const [admin, signers, minSigners, token, active] = raw as unknown[];
+  return {
+    admin: String(admin),
+    signers: (signers as unknown[]).map(String),
+    min_signers: Number(minSigners),
+    token: String(token),
+    active: Boolean(active),
+  };
+}
+
+function mapContractor(raw: unknown): Contractor {
+  const [wallet, name, email, active, totalPaid] = raw as unknown[];
+  return {
+    wallet: String(wallet),
+    name: String(name),
+    email: String(email),
+    active: Boolean(active),
+    total_paid: i128ToString(totalPaid),
+  };
+}
+
+function mapPayrollRun(raw: unknown): PayrollRun {
+  const [
+    id,
+    company,
+    periodStart,
+    periodEnd,
+    status,
+    totalAmount,
+    paymentCount,
+    approvals,
+    createdAt,
+    executedAt,
+  ] = raw as unknown[];
+  return {
+    id: i128ToString(id),
+    company: String(company),
+    period_start: i128ToString(periodStart),
+    period_end: i128ToString(periodEnd),
+    status: String(status),
+    total_amount: i128ToString(totalAmount),
+    payment_count: Number(paymentCount),
+    approvals: (approvals as unknown[]).map(String),
+    created_at: i128ToString(createdAt),
+    executed_at: i128ToString(executedAt),
+  };
+}
+
+function mapPayment(raw: unknown): PaymentEntry {
+  const [contractor, amount, currency, memo, paid, txHash] = raw as unknown[];
+  const bytes = txHash as Uint8Array;
+  return {
+    contractor: String(contractor),
+    amount: i128ToString(amount),
+    currency: String(currency),
+    memo: String(memo),
+    paid: Boolean(paid),
+    tx_hash: bytes instanceof Uint8Array ? Buffer.from(bytes).toString('hex') : String(txHash),
+  };
+}
+
 export const payrollService = new PayrollService();
+export type { Company, Contractor, PayrollRun, PaymentEntry };
