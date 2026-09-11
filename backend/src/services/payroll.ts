@@ -235,6 +235,18 @@ export class PayrollService {
     return mapPayrollRun(scValToNative(scValFromLedgerEntry(result.val)));
   }
 
+  async getNextRunId(): Promise<number> {
+    try {
+      const result = await stellarService.getRpc().getContractData(
+        getContractId(),
+        scvDataKey('NextRunId'),
+      );
+      return Number(scValToNative(scValFromLedgerEntry(result.val)));
+    } catch (err: unknown) {
+      return 0;
+    }
+  }
+
   async getPayment(
     runId: number,
     contractorAddress: string,

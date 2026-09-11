@@ -92,4 +92,69 @@ describe('api client', () => {
     expect(url).toBe('/api/v1/streams/3/cancel');
     expect(opts.body).toBe(JSON.stringify({ senderSecretKey: 'SSender' }));
   });
+
+  it('getCompany fetches a typed company record', async () => {
+    const company = {
+      admin: 'GA',
+      signers: ['GA'],
+      min_signers: 1,
+      token: 'CT',
+      active: true,
+    };
+    mockOk(company);
+    await expect(api.getCompany('GA')).resolves.toEqual(company);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/payroll/companies/GA',
+      expect.objectContaining({ headers: expect.anything() }),
+    );
+  });
+
+  it('getNextRunId resolves the run id counter', async () => {
+    mockOk({ nextRunId: 7 });
+    await expect(api.getNextRunId()).resolves.toEqual({ nextRunId: 7 });
+  });
+
+  it('addPayment posts payment body to payroll endpoint', async () => {
+    mockOk({ transactionHash: 'tx1' });
+    await api.addPayment({
+      adminSecretKey: 'SAdmin',
+      companyAddress: 'GCo',
+      runId: 2,
+      contractorAddress: 'GCt',
+      amount: '500000000',
+      currency: 'CTok',
+    });
+    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/v1/payroll/payments');
+    expect(opts.method).toBe('POST');
+    expect(opts.body).toBe(
+      JSON.stringify({
+        adminSecretKey: 'SAdmin',
+        companyAddress: 'GCo',
+        runId: 2,
+        contractorAddress: 'GCt',
+        amount: '500000000',
+        currency: 'CTok',
+      }),
+    );
+  });
+
+  it('getStream resolves stream record with available amount', async () => {
+    const stream = { id: 1, recipient: 'GR', availableAmount: '100' };
+    mockOk(stream);
+    await expect(api.getStream(1)).resolves.toEqual(stream);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/streams/1',
+      expect.objectContaining({ headers: expect.anything() }),
+    );
+  });
+
+  it('getRecipientStreams resolves stream id list', async () => {
+    mockOk([1, 2, 3]);
+    await expect(api.getRecipientStreams('GR')).resolves.toEqual([1, 2, 3]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/streams/recipient/GR',
+      expect.objectContaining({ headers: expect.anything() }),
+    );
+  });
 });

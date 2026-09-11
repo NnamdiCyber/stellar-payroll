@@ -1,20 +1,32 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Users, Plus, Mail, Wallet, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
+import { useContractorsDetailed } from '../hooks/queries';
+import { usePersistentState } from './usePersistentState';
+import { store } from '../api/storage';
 
 export function Contractors() {
   const [adminSecret, setAdminSecret] = useState('');
-  const [companyAddress, setCompanyAddress] = useState('');
+  const [companyAddress, setCompanyAddress] = usePersistentState(
+    'stellarpay.companyAddress',
+    store.getCompanyAddress(),
+  );
   const [contractorAddress, setContractorAddress] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const [contractors, setContractors] = useState<
-    Array<{ address: string; name: string; email: string }>
-  >([]);
   const [removing, setRemoving] = useState<string | null>(null);
+
+  const queryClient = useQueryClient();
+  const { data: contractors, isLoading } = useContractorsDetailed(companyAddress);
+
+  const activeContractors = (contractors ?? []).filter((c) => c.active);
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ['contractors-detailed', companyAddress] });
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -29,11 +41,7 @@ export function Contractors() {
         name,
         email,
       });
-
-      setContractors([
-        ...contractors,
-        { address: contractorAddress, name, email },
-      ]);
+      invalidate();
       setContractorAddress('');
       setName('');
       setEmail('');
@@ -53,7 +61,7 @@ export function Contractors() {
     setError('');
     try {
       await api.removeContractor(companyAddress, address, adminSecret);
-      setContractors(contractors.filter((c) => c.address !== address));
+      invalidate();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to remove contractor');
     } finally {
@@ -81,7 +89,9 @@ export function Contractors() {
           </div>
 
           <div>
-            <label className="block text-xs text-stellar-400 mb-1">Admin Secret Key</label>
+            <label className="block text-xs text-stellar-400 mb-1">
+              Admin Secret Key
+            </label>
             <input
               type="password"
               value={adminSecret}
@@ -164,28 +174,41 @@ export function Contractors() {
         <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-6">
           <div className="flex items-center gap-2 text-stellar-300 text-sm font-medium mb-4">
             <Users className="w-4 h-4" />
-            Contractor List ({contractors.length})
+            Contractor List ({activeContractors.length})
+          </div>
+          <div className="text-xs text-stellar-500 mb-3">
+            Fetched from the payroll manager contract for this company.
           </div>
 
-          {contractors.length === 0 ? (
+          {!companyAddress ? (
+            <div className="text-center py-8 text-stellar-500 text-sm">
+              Enter a company address to load the roster
+            </div>
+          ) : isLoading ? (
+            <div className="text-center py-8 text-stellar-500 text-sm">
+              Loading roster...
+            </div>
+          ) : activeContractors.length === 0 ? (
             <div className="text-center py-8 text-stellar-500 text-sm">
               No contractors added yet
             </div>
           ) : (
             <div className="space-y-2">
-              {contractors.map((c, i) => (
+              {activeContractors.map((c) => (
                 <div
-                  key={i}
+                  key={c.wallet}
                   className="flex items-center justify-between p-3 bg-stellar-950 rounded-lg"
                 >
                   <div>
                     <div className="text-sm text-white">{c.name}</div>
                     <div className="text-xs text-stellar-400">{c.email}</div>
-                    <code className="text-xs text-stellar-500">{c.address.slice(0, 12)}...</code>
+                    <code className="text-xs text-stellar-500">
+                      {c.wallet.slice(0, 12)}...
+                    </code>
                   </div>
                   <button
-                    onClick={() => handleRemove(c.address)}
-                    disabled={removing === c.address}
+                    onClick={() => handleRemove(c.wallet)}
+                    disabled={removing === c.wallet}
                     aria-label={`Remove ${c.name}`}
                     className="text-stellar-500 hover:text-red-400 disabled:opacity-50"
                   >

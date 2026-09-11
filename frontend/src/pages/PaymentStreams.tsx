@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Keypair } from '@stellar/stellar-sdk';
 import { Waves, Clock, XCircle } from 'lucide-react';
 import { api } from '../api/client';
+import { useSenderStreams } from '../hooks/queries';
 
 export function PaymentStreams() {
   const [senderSecret, setSenderSecret] = useState('');
@@ -12,14 +15,22 @@ export function PaymentStreams() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState<number | null>(null);
-  const [streams, setStreams] = useState<
-    Array<{
-      id: number;
-      recipient: string;
-      amountPerSec: string;
-      status: string;
-    }>
-  >([]);
+
+  const queryClient = useQueryClient();
+
+  const senderPublicKey = useMemo(() => {
+    try {
+      return Keypair.fromSecret(senderSecret).publicKey();
+    } catch {
+      return '';
+    }
+  }, [senderSecret]);
+
+  const { data: streams, isLoading } = useSenderStreams(senderPublicKey);
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ['streams', senderPublicKey] });
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -27,7 +38,7 @@ export function PaymentStreams() {
     setError('');
 
     try {
-      const data = await api.createStream({
+      await api.createStream({
         senderSecretKey: senderSecret,
         recipientAddress: recipient,
         tokenAddress: token,
@@ -37,16 +48,7 @@ export function PaymentStreams() {
         memo: `Stream to ${recipient.slice(0, 8)}`,
       });
 
-      setStreams([
-        {
-          id: data.streamId,
-          recipient: recipient,
-          amountPerSec: amountPerSec,
-          status: 'Active',
-        },
-        ...streams,
-      ]);
-
+      invalidate();
       setRecipient('');
       setAmountPerSec('');
       setMaxAmount('');
@@ -67,7 +69,7 @@ export function PaymentStreams() {
     setError('');
     try {
       await api.cancelStream(streamId, senderSecret);
-      setStreams(streams.filter((s) => s.id !== streamId));
+      invalidate();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to cancel stream');
     } finally {
@@ -95,7 +97,9 @@ export function PaymentStreams() {
           </div>
 
           <div>
-            <label className="block text-xs text-stellar-400 mb-1">Sender Secret Key</label>
+            <label className="block text-xs text-stellar-400 mb-1">
+              Sender Secret Key
+            </label>
             <input
               type="password"
               value={senderSecret}
@@ -107,7 +111,9 @@ export function PaymentStreams() {
           </div>
 
           <div>
-            <label className="block text-xs text-stellar-400 mb-1">Recipient Address</label>
+            <label className="block text-xs text-stellar-400 mb-1">
+              Recipient Address
+            </label>
             <input
               type="text"
               value={recipient}
@@ -188,16 +194,27 @@ export function PaymentStreams() {
         <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-6">
           <div className="flex items-center gap-2 text-stellar-300 text-sm font-medium mb-4">
             <Waves className="w-4 h-4" />
-            Active Streams ({streams.length})
+            Active Streams ({streams?.length ?? 0})
+          </div>
+          <div className="text-xs text-stellar-500 mb-3">
+            Loaded live from the payment stream contract.
           </div>
 
-          {streams.length === 0 ? (
+          {!senderPublicKey ? (
             <div className="text-center py-8 text-stellar-500 text-sm">
-              No active payment streams
+              Enter a valid sender secret key to load your streams
+            </div>
+          ) : isLoading ? (
+            <div className="text-center py-8 text-stellar-500 text-sm">
+              Loading streams...
+            </div>
+          ) : (streams?.length ?? 0) === 0 ? (
+            <div className="text-center py-8 text-stellar-500 text-sm">
+              No payment streams created by this sender
             </div>
           ) : (
             <div className="space-y-2">
-              {streams.map((s) => (
+              {streams?.map((s) => (
                 <div
                   key={s.id}
                   className="flex items-center justify-between p-3 bg-stellar-950 rounded-lg"
@@ -205,22 +222,32 @@ export function PaymentStreams() {
                   <div>
                     <div className="text-sm text-white">Stream #{s.id}</div>
                     <code className="text-xs text-stellar-500">
-                      {s.recipient.slice(0, 12)}...
+                      → {s.recipient.slice(0, 12)}...
                     </code>
+                    <div className="text-xs text-stellar-400 mt-1">
+                      {s.amountPerSecond}/sec · unlocked: {s.availableAmount ?? '0'}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-stellar-400">{s.amountPerSec}/sec</span>
-                    <span className="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded border border-green-800">
-                      {s.status}
-                    </span>
-                    <button
-                      onClick={() => handleCancel(s.id)}
-                      disabled={cancelling === s.id}
-                      aria-label={`Cancel stream ${s.id}`}
-                      className="text-stellar-500 hover:text-red-400 disabled:opacity-50"
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded border ${
+                        s.cancelled
+                          ? 'text-stellar-400 bg-stellar-800/30 border-stellar-700'
+                          : 'text-green-400 bg-green-900/30 border-green-800'
+                      }`}
                     >
-                      <XCircle className="w-4 h-4" />
-                    </button>
+                      {s.cancelled ? 'Cancelled' : 'Active'}
+                    </span>
+                    {!s.cancelled && (
+                      <button
+                        onClick={() => handleCancel(s.id)}
+                        disabled={cancelling === s.id}
+                        aria-label={`Cancel stream ${s.id}`}
+                        className="text-stellar-500 hover:text-red-400 disabled:opacity-50"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

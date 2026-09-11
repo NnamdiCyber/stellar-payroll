@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 import {
   Building2,
@@ -9,8 +10,12 @@ import {
   Plus,
   Send,
   Activity,
+  RefreshCw,
 } from 'lucide-react';
-import { api, AccountData } from '../api/client';
+import { api } from '../api/client';
+import { store } from '../api/storage';
+import { useCompany, useCompanyContractors, usePayrollRuns } from '../hooks/queries';
+import { usePersistentState } from './usePersistentState';
 
 function StatCard({
   icon: Icon,
@@ -39,17 +44,29 @@ function StatCard({
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const [account, setAccount] = useState<AccountData | null>(null);
+  const queryClient = useQueryClient();
+  const [companyAddress, setCompanyAddress] = usePersistentState(
+    'stellarpay.companyAddress',
+    store.getCompanyAddress(),
+  );
   const [creating, setCreating] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
   const [error, setError] = useState('');
+
+  const { data: company, isFetching: companyLoading } = useCompany(companyAddress);
+  const { data: contractorAddresses, isFetching: contractorsLoading } =
+    useCompanyContractors(companyAddress);
+  const { data: runs, isFetching: runsLoading } = usePayrollRuns(companyAddress);
+
+  const contractorCount =
+    companyAddress && Array.isArray(contractorAddresses) ? contractorAddresses.length : 0;
 
   async function handleCreateAccount() {
     setCreating(true);
     setError('');
     try {
       const data = await api.createTestAccount();
-      setAccount(data);
+      store.setWalletAddress(data.publicKey);
+      navigate('/portal');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create account');
     } finally {
@@ -59,31 +76,73 @@ export function Dashboard() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Payroll Dashboard</h1>
-        <p className="text-stellar-400 mt-1">
-          Manage cross-border B2B payroll and contractor payments on Stellar
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Payroll Dashboard</h1>
+          <p className="text-stellar-400 mt-1">
+            Manage cross-border B2B payroll and contractor payments on Stellar
+          </p>
+        </div>
+        <button
+          onClick={() => queryClient.invalidateQueries()}
+          className="flex items-center gap-1 text-xs text-stellar-400 hover:text-stellar-200"
+        >
+          <RefreshCw className="w-3 h-3" />
+          Refresh
+        </button>
+      </div>
+
+      <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-4">
+        <label className="block text-xs text-stellar-400 mb-1">
+          Company Stellar Address (auto-persisted)
+        </label>
+        <input
+          type="text"
+          value={companyAddress}
+          onChange={(e) => setCompanyAddress(e.target.value)}
+          className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+          placeholder="G. Company public address"
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={Building2}
           label="Company"
-          value="Not Set Up"
-          sub="Register your company to get started"
+          value={
+            company
+              ? company.active
+                ? 'Active'
+                : 'Inactive'
+              : companyAddress
+                ? companyLoading
+                  ? 'Loading'
+                  : 'Not Found'
+                : 'Not Set Up'
+          }
+          sub={
+            company
+              ? `Multisig ${company.min_signers} / ${company.signers.length}`
+              : 'Register your company to get started'
+          }
         />
         <StatCard
           icon={Users}
           label="Contractors"
-          value="0"
-          sub="Add contractors to run payroll"
+          value={contractorsLoading ? '…' : String(contractorCount)}
+          sub={
+            contractorCount > 0
+              ? 'On the company roster'
+              : 'Add contractors to run payroll'
+          }
         />
         <StatCard
           icon={DollarSign}
           label="Payroll Runs"
-          value="0"
-          sub="No runs created yet"
+          value={runsLoading ? '…' : String(runs?.length ?? 0)}
+          sub={
+            (runs?.length ?? 0) > 0 ? 'Across all runs on-chain' : 'No runs created yet'
+          }
         />
         <StatCard
           icon={Activity}
@@ -137,31 +196,22 @@ export function Dashboard() {
               {error}
             </div>
           )}
-          {account ? (
+          {store.getWalletAddress() ? (
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-stellar-400 block mb-1">Public Key</label>
+                <label className="text-xs text-stellar-400 block mb-1">
+                  Connected Wallet
+                </label>
                 <code className="text-xs bg-stellar-950 px-3 py-2 rounded block truncate text-stellar-200">
-                  {account.publicKey}
+                  {store.getWalletAddress()}
                 </code>
               </div>
-              <div>
-                <label className="text-xs text-stellar-400 block mb-1">Secret Key</label>
-                <div className="flex items-center gap-2">
-                  <code className="text-xs bg-stellar-950 px-3 py-2 rounded block truncate text-stellar-200 flex-1">
-                    {showSecret ? account.secretKey : '•••••••••••••••••••••••'}
-                  </code>
-                  <button
-                    onClick={() => setShowSecret(!showSecret)}
-                    className="text-xs text-stellar-400 hover:text-stellar-200 whitespace-nowrap"
-                  >
-                    {showSecret ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-              </div>
-              <div className="text-xs text-stellar-500">
-                Testnet only. Never share secret keys in production.
-              </div>
+              <button
+                onClick={() => navigate('/portal')}
+                className="w-full px-4 py-3 bg-stellar-800 hover:bg-stellar-700 rounded-lg text-sm text-white transition-colors"
+              >
+                Open Contractor Portal
+              </button>
             </div>
           ) : (
             <button

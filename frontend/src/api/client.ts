@@ -7,10 +7,7 @@ interface ApiEnvelope<T> {
   message?: string;
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: {
@@ -118,21 +115,30 @@ export interface EscrowBalanceData {
 }
 
 export const api = {
-  createTestAccount: () => request<AccountData>('/anchor/create-account', { method: 'POST' }),
+  createTestAccount: () =>
+    request<AccountData>('/anchor/create-account', { method: 'POST' }),
   getBalance: (publicKey: string) => request<BalanceData>(`/anchor/balance/${publicKey}`),
   registerCompany: (body: {
     adminSecretKey: string;
     signers: string[];
     minSigners: number;
     tokenAddress: string;
-  }) => request<RegisteredCompany>('/payroll/companies', { method: 'POST', body: JSON.stringify(body) }),
+  }) =>
+    request<RegisteredCompany>('/payroll/companies', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   addContractor: (body: {
     adminSecretKey: string;
     companyAddress: string;
     contractorAddress: string;
     name: string;
     email: string;
-  }) => request<{ transactionHash: string }>('/payroll/contractors', { method: 'POST', body: JSON.stringify(body) }),
+  }) =>
+    request<{ transactionHash: string }>('/payroll/contractors', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   removeContractor: (
     companyAddress: string,
     contractorAddress: string,
@@ -150,7 +156,11 @@ export const api = {
     companyAddress: string;
     periodStart: number;
     periodEnd: number;
-  }) => request<RegisteredRun>('/payroll/runs', { method: 'POST', body: JSON.stringify(body) }),
+  }) =>
+    request<RegisteredRun>('/payroll/runs', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   addPayment: (body: {
     adminSecretKey: string;
     companyAddress: string;
@@ -173,11 +183,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  executeRun: (
-    runId: number,
-    companyAddress: string,
-    signerSecretKey: string,
-  ) =>
+  executeRun: (runId: number, companyAddress: string, signerSecretKey: string) =>
     request<{ transactionHash: string }>(`/payroll/runs/${runId}/execute`, {
       method: 'POST',
       body: JSON.stringify({ companyAddress, signerSecretKey }),
@@ -190,11 +196,15 @@ export const api = {
     maxAmount: string;
     durationSeconds: number;
     memo: string;
-  }) => request<CreatedStream>('/streams', { method: 'POST', body: JSON.stringify(body) }),
-  withdrawFromStream: (streamId: number, body: {
-    recipientSecretKey: string;
-    amount: string;
   }) =>
+    request<CreatedStream>('/streams', { method: 'POST', body: JSON.stringify(body) }),
+  withdrawFromStream: (
+    streamId: number,
+    body: {
+      recipientSecretKey: string;
+      amount: string;
+    },
+  ) =>
     request<{ transactionHash: string }>(`/streams/${streamId}/withdraw`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -207,7 +217,9 @@ export const api = {
   getCompany: (address: string) =>
     request<CompanyRecord>(`/payroll/companies/${address}`),
   getCompanyContractors: (companyAddress: string) =>
-    request<string[] | ContractorRecord[]>(`/payroll/companies/${companyAddress}/contractors`),
+    request<string[] | ContractorRecord[]>(
+      `/payroll/companies/${companyAddress}/contractors`,
+    ),
   getContractor: (companyAddress: string, contractorAddress: string) =>
     request<ContractorRecord>(
       `/payroll/companies/${companyAddress}/contractors/${contractorAddress}`,
@@ -216,16 +228,12 @@ export const api = {
     request<EscrowBalanceData>(
       `/payroll/companies/${companyAddress}/balance/${tokenAddress}`,
     ),
-  getPayrollRun: (runId: number) =>
-    request<PayrollRunRecord>(`/payroll/runs/${runId}`),
+  getPayrollRun: (runId: number) => request<PayrollRunRecord>(`/payroll/runs/${runId}`),
+  getNextRunId: () => request<{ nextRunId: number }>('/payroll/runs/next'),
   getPayment: (runId: number, contractorAddress: string) =>
-    request<PaymentRecord>(
-      `/payroll/runs/${runId}/payments/${contractorAddress}`,
-    ),
-  getStream: (streamId: number) =>
-    request<StreamRecord>(`/streams/${streamId}`),
+    request<PaymentRecord>(`/payroll/runs/${runId}/payments/${contractorAddress}`),
+  getStream: (streamId: number) => request<StreamRecord>(`/streams/${streamId}`),
   getRecipientStreams: (recipient: string) =>
     request<number[]>(`/streams/recipient/${recipient}`),
-  getSenderStreams: (sender: string) =>
-    request<number[]>(`/streams/sender/${sender}`),
+  getSenderStreams: (sender: string) => request<number[]>(`/streams/sender/${sender}`),
 };

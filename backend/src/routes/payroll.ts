@@ -181,6 +181,14 @@ payrollRoutes.get(
 );
 
 payrollRoutes.get(
+  '/runs/next',
+  asyncHandler(async (req: Request, res: Response) => {
+    const nextRunId = await payrollService.getNextRunId();
+    res.json({ success: true, data: { nextRunId } });
+  }),
+);
+
+payrollRoutes.get(
   '/runs/:runId',
   asyncHandler(async (req: Request, res: Response) => {
     const { runId } = PayrollRunIdParamsSchema.parse(req.params);

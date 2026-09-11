@@ -1,48 +1,65 @@
 import { useState } from 'react';
-import { DollarSign, Calendar, Send } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { DollarSign, Calendar, Send, CheckSquare } from 'lucide-react';
 import { api } from '../api/client';
+import { usePayrollRuns } from '../hooks/queries';
+import { usePersistentState } from './usePersistentState';
+import { store } from '../api/storage';
 
 export function Payroll() {
   const [adminSecret, setAdminSecret] = useState('');
   const [signerSecret, setSignerSecret] = useState('');
-  const [companyAddress, setCompanyAddress] = useState('');
+  const [companyAddress, setCompanyAddress] = usePersistentState(
+    'stellarpay.companyAddress',
+    store.getCompanyAddress(),
+  );
   const [error, setError] = useState('');
   const [executing, setExecuting] = useState<number | null>(null);
-  const [runs, setRuns] = useState<
-    Array<{
-      id: number;
-      periodStart: string;
-      periodEnd: string;
-      status: string;
-      totalAmount: string;
-      paymentCount: number;
-    }>
-  >([]);
+  const [approving, setApproving] = useState<number | null>(null);
+
+  const queryClient = useQueryClient();
+  const { data: runs, isLoading } = usePayrollRuns(companyAddress);
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ['payroll-runs', companyAddress] });
+  }
 
   async function createRun() {
+    setError('');
     const periodStart = Math.floor(Date.now() / 1000) - 30 * 86400;
     const periodEnd = Math.floor(Date.now() / 1000);
 
     try {
-      const data = await api.createRun({
+      await api.createRun({
         adminSecretKey: adminSecret,
         companyAddress,
         periodStart,
         periodEnd,
       });
-      setRuns([
-        {
-          id: data.runId,
-          periodStart: new Date(periodStart * 1000).toLocaleDateString(),
-          periodEnd: new Date(periodEnd * 1000).toLocaleDateString(),
-          status: 'Pending',
-          totalAmount: '—',
-          paymentCount: 0,
-        },
-        ...runs,
-      ]);
+      invalidate();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create run');
+    }
+  }
+
+  async function approveRun(id: number) {
+    if (!signerSecret) {
+      setError('Enter a signer secret key to approve the run');
+      return;
+    }
+    setApproving(id);
+    setError('');
+    try {
+      await api.approveRun({
+        companyAddress,
+        runId: id,
+        signerSecretKey: signerSecret,
+      });
+      invalidate();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to approve run');
+    } finally {
+      setApproving(null);
     }
   }
 
@@ -55,11 +72,7 @@ export function Payroll() {
     setError('');
     try {
       await api.executeRun(id, companyAddress, signerSecret);
-      setRuns(
-        runs.map((run) =>
-          run.id === id ? { ...run, status: 'Completed' } : run,
-        ),
-      );
+      invalidate();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to execute run');
     } finally {
@@ -131,14 +144,21 @@ export function Payroll() {
           <h2 className="text-sm font-medium text-stellar-300">Payroll History</h2>
         </div>
 
-        {runs.length === 0 ? (
+        {runs === undefined && isLoading ? (
           <div className="p-12 text-center text-stellar-500 text-sm">
             <DollarSign className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            No payroll runs yet. Create one to get started.
+            Loading payroll history...
+          </div>
+        ) : (runs?.length ?? 0) === 0 ? (
+          <div className="p-12 text-center text-stellar-500 text-sm">
+            <DollarSign className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            {companyAddress
+              ? 'No payroll runs for this company yet. Create one to get started.'
+              : 'Enter a company address and create a run to see history.'}
           </div>
         ) : (
           <div className="divide-y divide-stellar-800">
-            {runs.map((run) => (
+            {(runs ?? []).map((run) => (
               <div
                 key={run.id}
                 className="flex items-center justify-between p-4 hover:bg-stellar-950/50 transition-colors"
@@ -148,17 +168,19 @@ export function Payroll() {
                     <DollarSign className="w-4 h-4 text-stellar-300" />
                   </div>
                   <div>
-                    <div className="text-sm text-white font-medium">
-                      Run #{run.id}
-                    </div>
+                    <div className="text-sm text-white font-medium">Run #{run.id}</div>
                     <div className="text-xs text-stellar-400">
-                      {run.periodStart} → {run.periodEnd}
+                      {new Date(Number(run.period_start) * 1000).toLocaleDateString()} →{' '}
+                      {new Date(Number(run.period_end) * 1000).toLocaleDateString()}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-4">
-                  <span className="text-sm text-stellar-300">{run.paymentCount} payments</span>
+                  <span className="text-sm text-stellar-300">
+                    {run.payment_count} payments
+                  </span>
+                  <span className="text-sm text-stellar-300">{run.total_amount}</span>
                   <span
                     className={`text-xs px-2 py-1 rounded border ${
                       statusColors[run.status] || 'text-stellar-400'
@@ -166,14 +188,24 @@ export function Payroll() {
                   >
                     {run.status}
                   </span>
+                  {run.status === 'Pending' && (
+                    <button
+                      onClick={() => approveRun(Number(run.id))}
+                      disabled={approving === Number(run.id)}
+                      className="flex items-center gap-1 text-xs text-stellar-400 hover:text-stellar-200 disabled:opacity-50"
+                    >
+                      <CheckSquare className="w-3 h-3" />
+                      {approving === Number(run.id) ? 'Approving...' : 'Approve'}
+                    </button>
+                  )}
                   {run.status === 'Approved' && (
                     <button
-                      onClick={() => executeRun(run.id)}
-                      disabled={executing === run.id}
+                      onClick={() => executeRun(Number(run.id))}
+                      disabled={executing === Number(run.id)}
                       className="flex items-center gap-1 text-xs text-stellar-400 hover:text-stellar-200 disabled:opacity-50"
                     >
                       <Send className="w-3 h-3" />
-                      {executing === run.id ? 'Executing...' : 'Execute'}
+                      {executing === Number(run.id) ? 'Executing...' : 'Execute'}
                     </button>
                   )}
                 </div>
