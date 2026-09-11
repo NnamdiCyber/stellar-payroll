@@ -1,4 +1,4 @@
-import { Keypair, SorobanRpc, TransactionBuilder, Networks, BASE_FEE } from '@stellar/stellar-sdk';
+import { Keypair, SorobanRpc, TransactionBuilder, Networks, Operation, Address, BASE_FEE } from '@stellar/stellar-sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,6 +7,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = Networks.TESTNET;
+
+/** Normalize a wasm-id return value (Buffer or hex string) into a 32-byte hash. */
+function toWasmHash(value: unknown): Buffer {
+  if (value instanceof Uint8Array) {
+    return Buffer.from(value);
+  }
+  if (typeof value === 'string') {
+    return Buffer.from(value, 'hex');
+  }
+  throw new Error(`Unexpected wasm-id return value: ${typeof value}`);
+}
 
 async function main() {
   const adminKp = Keypair.random();
@@ -48,7 +59,7 @@ async function main() {
     networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(
-      SorobanRpc.Operations.uploadContractWasm({
+      Operation.uploadContractWasm({
         wasm,
         source: adminKp.publicKey(),
       }),
@@ -64,17 +75,17 @@ async function main() {
   }
   console.log('WASM uploaded, tx:', uploadResp.hash);
 
-  let wasmId: string | null = null;
+  let wasmHash: Buffer | null = null;
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 3000));
     const txResp = await rpc.getTransaction(uploadResp.hash!);
     if (txResp.status === 'SUCCESS') {
-      wasmId = txResp.returnValue as unknown as string;
+      wasmHash = toWasmHash(txResp.returnValue);
       break;
     }
   }
-  if (!wasmId) { console.error('Failed to get wasm id'); process.exit(1); }
-  console.log('WASM ID:', wasmId);
+  if (!wasmHash) { console.error('Failed to get wasm id'); process.exit(1); }
+  console.log('WASM ID:', wasmHash.toString('hex'));
 
   const account2 = await rpc.getAccount(adminKp.publicKey());
   const createTx = new TransactionBuilder(account2, {
@@ -82,8 +93,9 @@ async function main() {
     networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(
-      SorobanRpc.Operations.createContract({
-        wasmId,
+      Operation.createCustomContract({
+        wasmHash,
+        address: new Address(adminKp.publicKey()),
         source: adminKp.publicKey(),
       }),
     )
