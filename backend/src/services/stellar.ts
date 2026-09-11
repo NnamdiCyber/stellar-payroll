@@ -58,6 +58,7 @@ export class StellarService {
     method: string,
     args: xdr.ScVal[],
     sourceKeypair: Keypair,
+    options: { waitForConfirmation?: boolean } = {},
   ): Promise<string> {
     const account = await this.rpc.getAccount(sourceKeypair.publicKey());
 
@@ -88,10 +89,41 @@ export class StellarService {
     prepared.sign(sourceKeypair);
     const sendResp = await this.rpc.sendTransaction(prepared);
 
-    if (sendResp.status === 'PENDING' || sendResp.status === 'DUPLICATE') {
-      return sendResp.hash!;
+    if (sendResp.status !== 'PENDING' && sendResp.status !== 'DUPLICATE') {
+      throw new Error(`Transaction failed: ${sendResp.status}`);
     }
-    throw new Error(`Transaction failed: ${sendResp.status}`);
+
+    if (options.waitForConfirmation) {
+      await this.confirmTransaction(sendResp.hash!);
+    }
+    return sendResp.hash!;
+  }
+
+  /**
+   * Poll `getTransaction` until the transaction settles, throwing when it
+   * fails or the timeout elapses. Returns the final response so callers can
+   * read the `returnValue` (e.g. a wasm id or contract id).
+   */
+  async confirmTransaction(
+    hash: string,
+    timeoutMs = 90_000,
+    pollIntervalMs = 2_000,
+  ): Promise<SorobanRpc.Api.GetTransactionResponse> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const response = await this.rpc.getTransaction(hash);
+      if (response.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+        return response;
+      }
+      if (response.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+        throw new Error(`Transaction ${hash} failed to settle`);
+      }
+      if (response.status === SorobanRpc.Api.GetTransactionStatus.NOT_FOUND) {
+        throw new Error(`Transaction ${hash} not found on network`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+    throw new Error(`Transaction ${hash} did not settle within ${timeoutMs}ms`);
   }
 
   /**
