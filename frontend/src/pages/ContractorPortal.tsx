@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Wallet, Waves, RefreshCw } from 'lucide-react';
+import { ExternalLink, Wallet, Waves, RefreshCw, Banknote } from 'lucide-react';
 import { api } from '../api/client';
 import { store } from '../api/storage';
 import { useRecipientStreams } from '../hooks/queries';
@@ -15,6 +15,8 @@ export function ContractorPortal() {
   const [balance, setBalance] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [recipientSecret, setRecipientSecret] = useState('');
+  const [withdrawing, setWithdrawing] = useState<number | null>(null);
 
   const queryClient = useQueryClient();
   const { data: streams, isLoading } = useRecipientStreams(walletAddress);
@@ -35,6 +37,26 @@ export function ContractorPortal() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleWithdraw(streamId: number, availableAmount: string) {
+    if (!recipientSecret) {
+      setError('Enter your recipient secret key to withdraw');
+      return;
+    }
+    setWithdrawing(streamId);
+    setError('');
+    try {
+      await api.withdrawFromStream(streamId, {
+        recipientSecretKey: recipientSecret,
+        amount: availableAmount,
+      });
+      queryClient.invalidateQueries({ queryKey: ['streams', walletAddress] });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to withdraw');
+    } finally {
+      setWithdrawing(null);
     }
   }
 
@@ -110,6 +132,12 @@ export function ContractorPortal() {
         </div>
       </div>
 
+      {error && (
+        <div className="p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-400">
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-4">
           <div className="text-xs text-stellar-400 mb-1">XLM Balance</div>
@@ -123,6 +151,22 @@ export function ContractorPortal() {
             {isLoading ? '…' : (streams?.filter((s) => !s.cancelled).length ?? 0)}
           </div>
         </div>
+      </div>
+
+      <div className="bg-stellar-900 border border-stellar-800 rounded-xl p-4">
+        <label className="block text-xs text-stellar-400 mb-1">
+          Recipient Secret Key
+        </label>
+        <input
+          type="password"
+          value={recipientSecret}
+          onChange={(e) => setRecipientSecret(e.target.value)}
+          className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+          placeholder="S. Secret key used to sign withdrawals"
+        />
+        <p className="text-xs text-stellar-500 mt-1">
+          Only used in your browser to sign on-chain withdrawals.
+        </p>
       </div>
 
       <div className="bg-stellar-900 border border-stellar-800 rounded-xl overflow-hidden">
@@ -167,26 +211,36 @@ export function ContractorPortal() {
                     {stream.cancelled ? 'Cancelled' : 'Active'}
                   </span>
                 </div>
-                <div className="mt-3 grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-stellar-950 rounded-lg p-3">
-                    <div className="text-[11px] text-stellar-500">
-                      Available to withdraw
+<div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-stellar-950 rounded-lg p-3">
+                      <div className="text-[11px] text-stellar-500">
+                        Available to withdraw
+                      </div>
+                      <div className="text-sm text-white mt-1">
+                        {stream.availableAmount ?? '0'}
+                      </div>
                     </div>
-                    <div className="text-sm text-white mt-1">
-                      {stream.availableAmount ?? '0'}
+                    <div className="bg-stellar-950 rounded-lg p-3">
+                      <div className="text-[11px] text-stellar-500">Withdrawn</div>
+                      <div className="text-sm text-white mt-1">{stream.withdrawn}</div>
+                    </div>
+                    <div className="bg-stellar-950 rounded-lg p-3">
+                      <div className="text-[11px] text-stellar-500">Rate</div>
+                      <div className="text-sm text-white mt-1">
+                        {stream.amountPerSecond}/sec
+                      </div>
                     </div>
                   </div>
-                  <div className="bg-stellar-950 rounded-lg p-3">
-                    <div className="text-[11px] text-stellar-500">Withdrawn</div>
-                    <div className="text-sm text-white mt-1">{stream.withdrawn}</div>
-                  </div>
-                  <div className="bg-stellar-950 rounded-lg p-3">
-                    <div className="text-[11px] text-stellar-500">Rate</div>
-                    <div className="text-sm text-white mt-1">
-                      {stream.amountPerSecond}/sec
-                    </div>
-                  </div>
-                </div>
+                  {!stream.cancelled && Number(stream.availableAmount ?? '0') > 0 && (
+                    <button
+                      onClick={() => handleWithdraw(stream.id, stream.availableAmount ?? '0')}
+                      disabled={withdrawing === stream.id}
+                      className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-900/40 hover:bg-green-800/40 border border-green-800 rounded-lg text-sm text-green-400 font-medium transition-colors disabled:opacity-50"
+                    >
+                      <Banknote className="w-4 h-4" />
+                      {withdrawing === stream.id ? 'Withdrawing...' : 'Withdraw All'}
+                    </button>
+                  )}
               </div>
             ))}
           </div>

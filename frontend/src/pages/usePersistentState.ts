@@ -7,7 +7,12 @@ export function usePersistentState(
   const [value, setValue] = useState<string>(initialValue);
 
   useEffect(() => {
-    localStorage.setItem(key, value);
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Private browsing and blocked-storage contexts throw; persistence is
+      // best-effort and the in-memory state still works.
+    }
   }, [key, value]);
 
   return [value, setValue];
