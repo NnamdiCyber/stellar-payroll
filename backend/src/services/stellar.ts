@@ -103,6 +103,10 @@ export class StellarService {
    * Poll `getTransaction` until the transaction settles, throwing when it
    * fails or the timeout elapses. Returns the final response so callers can
    * read the `returnValue` (e.g. a wasm id or contract id).
+   *
+   * A transaction is expected to report NOT_FOUND for a moment or two right
+   * after `sendTransaction` returns, so NOT_FOUND simply means "keep
+   * polling"; only a FAILED status is fatal.
    */
   async confirmTransaction(
     hash: string,
@@ -117,9 +121,6 @@ export class StellarService {
       }
       if (response.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
         throw new Error(`Transaction ${hash} failed to settle`);
-      }
-      if (response.status === SorobanRpc.Api.GetTransactionStatus.NOT_FOUND) {
-        throw new Error(`Transaction ${hash} not found on network`);
       }
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }

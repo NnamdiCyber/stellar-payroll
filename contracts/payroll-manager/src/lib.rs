@@ -325,6 +325,16 @@ impl PayrollManager {
         require_active(&company);
         company.admin.require_auth();
 
+        // Only roster contractors may be paid. A payment to an unknown
+        // address would otherwise inflate the run's total_amount (raising
+        // its escrow requirement) while never being paid out, because
+        // execute_payroll_run iterates the roster only.
+        let contractor: Contractor =
+            env.storage().instance().get(&contractor_key(&company_addr, &contractor_addr)).unwrap();
+        if !contractor.active {
+            panic!("contractor is not active");
+        }
+
         let mut run: PayrollRun = env.storage().instance().get(&payroll_key(run_id)).unwrap();
 
         if run.company != company_addr {
@@ -776,6 +786,12 @@ mod tests {
 
         client.register_company(&admin_a, &vec![&env, admin_a.clone()], &1, &token);
         client.register_company(&admin_b, &vec![&env, admin_b.clone()], &1, &token);
+        client.add_contractor(
+            &admin_a,
+            &contractor_addr,
+            &String::from_str(&env, "John Doe"),
+            &String::from_str(&env, "john@example.com"),
+        );
 
         let run_id = client.create_payroll_run(&admin_a, &1700000000u64, &1700086400u64);
 
@@ -794,6 +810,39 @@ mod tests {
 
         let execute_cross = client.try_execute_payroll_run(&admin_b, &run_id, &admin_b);
         assert!(execute_cross.is_err());
+    }
+
+    #[test]
+    fn test_add_payment_rejects_unregistered_contractor() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PayrollManager);
+        let client = PayrollManagerClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let signers = vec![&env, admin.clone()];
+
+        client.register_company(&admin, &signers, &1, &token);
+        let run_id = client.create_payroll_run(&admin, &1700000000u64, &1700086400u64);
+
+        // No contractor was registered for this company, so the payment must
+        // be rejected instead of silently inflating the run total.
+        let unknown = client.try_add_payment(
+            &admin,
+            &run_id,
+            &stranger,
+            &100i128,
+            &token,
+            &String::from_str(&env, "unknown"),
+        );
+        assert!(unknown.is_err());
+
+        let run = client.get_payroll_run(&run_id);
+        assert_eq!(run.total_amount, 0);
+        assert_eq!(run.payment_count, 0);
     }
 
     #[test]
