@@ -168,15 +168,11 @@ payrollRoutes.get(
   '/companies/:companyAddr/balance/:tokenAddr',
   asyncHandler(async (req: Request, res: Response) => {
     const params = EscrowBalanceParamsSchema.parse(req.params);
-    try {
-      const balance = await payrollService.getCompanyBalance(
-        params.companyAddr,
-        params.tokenAddr,
-      );
-      res.json({ success: true, data: { balance } });
-    } catch (err: unknown) {
-      throw new ApiError(404, 'Escrow balance not found');
-    }
+    const balance = await payrollService.getCompanyBalance(
+      params.companyAddr,
+      params.tokenAddr,
+    );
+    res.json({ success: true, data: { balance } });
   }),
 );
 

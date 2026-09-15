@@ -120,21 +120,29 @@ export class StreamService {
   }
 
   async getRecipientStreams(recipient: string): Promise<number[]> {
-    const result = await stellarService.getRpc().getContractData(
-      getContractId(),
-      scvDataKey('RecipientStreams', scvAddress(recipient)),
-    );
-    const value = scValToNative(scValFromLedgerEntry(result.val));
-    return (Array.isArray(value) ? value : []).map((id) => Number(id));
+    try {
+      const result = await stellarService.getRpc().getContractData(
+        getContractId(),
+        scvDataKey('RecipientStreams', scvAddress(recipient)),
+      );
+      const value = scValToNative(scValFromLedgerEntry(result.val));
+      return (Array.isArray(value) ? value : []).map((id) => Number(id));
+    } catch (err: unknown) {
+      return [];
+    }
   }
 
   async getSenderStreams(sender: string): Promise<number[]> {
-    const result = await stellarService.getRpc().getContractData(
-      getContractId(),
-      scvDataKey('SenderStreams', scvAddress(sender)),
-    );
-    const value = scValToNative(scValFromLedgerEntry(result.val));
-    return (Array.isArray(value) ? value : []).map((id) => Number(id));
+    try {
+      const result = await stellarService.getRpc().getContractData(
+        getContractId(),
+        scvDataKey('SenderStreams', scvAddress(sender)),
+      );
+      const value = scValToNative(scValFromLedgerEntry(result.val));
+      return (Array.isArray(value) ? value : []).map((id) => Number(id));
+    } catch (err: unknown) {
+      return [];
+    }
   }
 
   /**

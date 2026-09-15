@@ -219,12 +219,16 @@ export class PayrollService {
   }
 
   async getCompanyContractors(companyAddress: string): Promise<string[]> {
-    const result = await stellarService.getRpc().getContractData(
-      getContractId(),
-      scvDataKey('CompanyContractors', scvAddress(companyAddress)),
-    );
-    const value = scValToNative(scValFromLedgerEntry(result.val));
-    return Array.isArray(value) ? value.map(String) : [];
+    try {
+      const result = await stellarService.getRpc().getContractData(
+        getContractId(),
+        scvDataKey('CompanyContractors', scvAddress(companyAddress)),
+      );
+      const value = scValToNative(scValFromLedgerEntry(result.val));
+      return Array.isArray(value) ? value.map(String) : [];
+    } catch (err: unknown) {
+      return [];
+    }
   }
 
   async getPayrollRun(runId: number): Promise<PayrollRun> {
@@ -262,11 +266,15 @@ export class PayrollService {
     companyAddress: string,
     tokenAddress: string,
   ): Promise<string> {
-    const result = await stellarService.getRpc().getContractData(
-      getContractId(),
-      scvDataKey('Escrow', scvAddress(companyAddress), scvAddress(tokenAddress)),
-    );
-    return i128ToString(scValToNative(scValFromLedgerEntry(result.val)));
+    try {
+      const result = await stellarService.getRpc().getContractData(
+        getContractId(),
+        scvDataKey('Escrow', scvAddress(companyAddress), scvAddress(tokenAddress)),
+      );
+      return i128ToString(scValToNative(scValFromLedgerEntry(result.val)));
+    } catch (err: unknown) {
+      return '0';
+    }
   }
 }
 
