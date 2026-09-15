@@ -85,6 +85,15 @@ export const PayrollExecuteSchema = z
   })
   .strict();
 
+export const EscrowDepositSchema = z
+  .object({
+    adminSecretKey: secretKey,
+    companyAddress: publicKey,
+    tokenAddress: contractAddress,
+    amount,
+  })
+  .strict();
+
 export const PayrollRunIdParamsSchema = z.object({
   runId: z.coerce.number().int().min(0),
 });

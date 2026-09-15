@@ -8,6 +8,7 @@ import {
   PaymentAddSchema,
   PayrollApproveSchema,
   PayrollExecuteSchema,
+  EscrowDepositSchema,
   PayrollRunIdParamsSchema,
   AddressParamsSchema,
   ContractorLookupParamsSchema,
@@ -123,6 +124,20 @@ payrollRoutes.post(
       body.signerSecretKey,
     );
     res.json({ success: true, data: { transactionHash: txHash } });
+  }),
+);
+
+payrollRoutes.post(
+  '/escrow/deposit',
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = EscrowDepositSchema.parse(req.body);
+    const txHash = await payrollService.depositToEscrow(
+      body.companyAddress,
+      body.tokenAddress,
+      body.amount,
+      body.adminSecretKey,
+    );
+    res.status(201).json({ success: true, data: { transactionHash: txHash } });
   }),
 );
 

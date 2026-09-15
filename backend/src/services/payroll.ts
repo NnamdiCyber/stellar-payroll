@@ -195,6 +195,28 @@ export class PayrollService {
     );
   }
 
+  async depositToEscrow(
+    companyAddress: string,
+    tokenAddress: string,
+    amount: string,
+    adminSecretKey: string,
+  ): Promise<string> {
+    const adminKp = Keypair.fromSecret(adminSecretKey);
+
+    const args = [
+      scvAddress(companyAddress),
+      scvAddress(tokenAddress),
+      scvI128(amount),
+    ];
+
+    return stellarService.invokeContract(
+      getContractId(),
+      'deposit_to_escrow',
+      args,
+      adminKp,
+    );
+  }
+
   async getCompany(companyAddress: string): Promise<Company> {
     const result = await stellarService.getRpc().getContractData(
       getContractId(),

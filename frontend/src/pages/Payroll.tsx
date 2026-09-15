@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { DollarSign, Calendar, Send, CheckSquare } from 'lucide-react';
+import { DollarSign, Calendar, Send, CheckSquare, PiggyBank, Plus } from 'lucide-react';
 import { api } from '../api/client';
-import { usePayrollRuns } from '../hooks/queries';
+import { usePayrollRuns, useCompany, useContractorsDetailed } from '../hooks/queries';
 import { usePersistentState } from './usePersistentState';
 import { store } from '../api/storage';
 
@@ -17,11 +17,38 @@ export function Payroll() {
   const [executing, setExecuting] = useState<number | null>(null);
   const [approving, setApproving] = useState<number | null>(null);
 
+  const [escrowAmount, setEscrowAmount] = useState('');
+  const [depositing, setDepositing] = useState(false);
+  const [escrowBalance, setEscrowBalance] = useState<string | null>(null);
+
+  const [paymentRunId, setPaymentRunId] = useState('');
+  const [paymentContractor, setPaymentContractor] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMemo, setPaymentMemo] = useState('');
+  const [addingPayment, setAddingPayment] = useState(false);
+
   const queryClient = useQueryClient();
   const { data: runs, isLoading } = usePayrollRuns(companyAddress);
+  const { data: company } = useCompany(companyAddress);
+  const { data: contractors } = useContractorsDetailed(companyAddress);
+
+  const activeContractors = (contractors ?? []).filter((c) => c.active);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['payroll-runs', companyAddress] });
+  }
+
+  async function refreshBalance() {
+    if (!companyAddress || !company?.token) {
+      setEscrowBalance(null);
+      return;
+    }
+    try {
+      const data = await api.getCompanyBalance(companyAddress, company.token);
+      setEscrowBalance(data.balance);
+    } catch (err: unknown) {
+      setEscrowBalance(null);
+    }
   }
 
   async function createRun() {
@@ -39,6 +66,58 @@ export function Payroll() {
       invalidate();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create run');
+    }
+  }
+
+  async function depositEscrow(e: React.FormEvent) {
+    e.preventDefault();
+    if (!adminSecret) {
+      setError('Enter the admin secret key to fund escrow');
+      return;
+    }
+    setDepositing(true);
+    setError('');
+    try {
+      await api.depositToEscrow({
+        adminSecretKey: adminSecret,
+        companyAddress,
+        tokenAddress: company!.token,
+        amount: escrowAmount,
+      });
+      setEscrowAmount('');
+      await refreshBalance();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to deposit to escrow');
+    } finally {
+      setDepositing(false);
+    }
+  }
+
+  async function addPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!adminSecret) {
+      setError('Enter the admin secret key to add a payment');
+      return;
+    }
+    setAddingPayment(true);
+    setError('');
+    try {
+      await api.addPayment({
+        adminSecretKey: adminSecret,
+        companyAddress,
+        runId: Number(paymentRunId),
+        contractorAddress: paymentContractor,
+        amount: paymentAmount,
+        currency: company!.token,
+        memo: paymentMemo || undefined,
+      });
+      setPaymentAmount('');
+      setPaymentMemo('');
+      invalidate();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to add payment');
+    } finally {
+      setAddingPayment(false);
     }
   }
 
@@ -83,6 +162,7 @@ export function Payroll() {
   const statusColors: Record<string, string> = {
     Pending: 'text-yellow-400 bg-yellow-900/30 border-yellow-800',
     Approved: 'text-blue-400 bg-blue-900/30 border-blue-800',
+    Executing: 'text-purple-400 bg-purple-900/30 border-purple-800',
     Completed: 'text-green-400 bg-green-900/30 border-green-800',
     Failed: 'text-red-400 bg-red-900/30 border-red-800',
     Cancelled: 'text-stellar-400 bg-stellar-800/30 border-stellar-700',
@@ -137,6 +217,150 @@ export function Payroll() {
             New Payroll Run
           </button>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <form
+          onSubmit={depositEscrow}
+          className="bg-stellar-900 border border-stellar-800 rounded-xl p-6 space-y-4"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-stellar-300 text-sm font-medium">
+              <PiggyBank className="w-4 h-4" />
+              Fund Escrow
+            </div>
+            {escrowBalance !== null && (
+              <button
+                type="button"
+                onClick={refreshBalance}
+                className="text-xs text-stellar-400 hover:text-stellar-200"
+              >
+                Balance: {escrowBalance}
+              </button>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs text-stellar-400 mb-1">
+              Payment Token Contract
+            </label>
+            <input
+              type="text"
+              value={company?.token ?? ''}
+              readOnly
+              className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white/70 focus:outline-none"
+              placeholder="Loads from the registered company"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-stellar-400 mb-1">Amount</label>
+            <input
+              type="text"
+              value={escrowAmount}
+              onChange={(e) => setEscrowAmount(e.target.value)}
+              className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+              placeholder="e.g. 1000000 (1 USDC = 10^7 units)"
+              required
+              disabled={!company?.token}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={depositing || !company?.token}
+            className="w-full px-4 py-2.5 bg-stellar-600 hover:bg-stellar-500 disabled:bg-stellar-700 rounded-lg text-sm text-white font-medium transition-colors"
+          >
+            {depositing ? 'Depositing...' : 'Deposit to Escrow'}
+          </button>
+          <p className="text-xs text-stellar-500">
+            Runs draw from the company's on-chain escrow at execution time.
+          </p>
+        </form>
+
+        <form
+          onSubmit={addPayment}
+          className="bg-stellar-900 border border-stellar-800 rounded-xl p-6 space-y-4"
+        >
+          <div className="flex items-center gap-2 text-stellar-300 text-sm font-medium">
+            <Plus className="w-4 h-4" />
+            Add Payment to Run
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-stellar-400 mb-1">Run</label>
+              <select
+                value={paymentRunId}
+                onChange={(e) => setPaymentRunId(e.target.value)}
+                className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+                required
+              >
+                <option value="" disabled>
+                  Select run
+                </option>
+                {(runs ?? [])
+                  .filter((run) => run.status === 'Pending')
+                  .map((run) => (
+                    <option key={run.id} value={run.id}>
+                      Run #{run.id} · {run.status}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-stellar-400 mb-1">Contractor</label>
+              <select
+                value={paymentContractor}
+                onChange={(e) => setPaymentContractor(e.target.value)}
+                className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+                required
+              >
+                <option value="" disabled>
+                  Select contractor
+                </option>
+                {activeContractors.map((c) => (
+                  <option key={c.wallet} value={c.wallet}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-stellar-400 mb-1">Amount</label>
+              <input
+                type="text"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+                placeholder="e.g. 1000000"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-stellar-400 mb-1">Memo</label>
+              <input
+                type="text"
+                value={paymentMemo}
+                onChange={(e) => setPaymentMemo(e.target.value)}
+                maxLength={256}
+                className="w-full px-3 py-2 bg-stellar-950 border border-stellar-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-500"
+                placeholder="January salary"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={addingPayment || activeContractors.length === 0}
+            className="w-full px-4 py-2.5 bg-stellar-600 hover:bg-stellar-500 disabled:bg-stellar-700 rounded-lg text-sm text-white font-medium transition-colors"
+          >
+            {addingPayment ? 'Adding...' : 'Add Payment'}
+          </button>
+        </form>
       </div>
 
       <div className="bg-stellar-900 border border-stellar-800 rounded-xl overflow-hidden">

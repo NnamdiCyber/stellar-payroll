@@ -183,6 +183,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  depositToEscrow: (body: {
+    adminSecretKey: string;
+    companyAddress: string;
+    tokenAddress: string;
+    amount: string;
+  }) =>
+    request<{ transactionHash: string }>('/payroll/escrow/deposit', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   executeRun: (runId: number, companyAddress: string, signerSecretKey: string) =>
     request<{ transactionHash: string }>(`/payroll/runs/${runId}/execute`, {
       method: 'POST',

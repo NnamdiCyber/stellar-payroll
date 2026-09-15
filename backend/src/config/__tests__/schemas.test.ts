@@ -4,6 +4,7 @@ import {
   ContractorAddSchema,
   PaymentAddSchema,
   StreamCreateSchema,
+  EscrowDepositSchema,
   PublicKeyParamsSchema,
 } from '../schemas';
 
@@ -152,6 +153,43 @@ describe('StreamCreateSchema', () => {
         amountPerSecond: '100',
         maxAmount: '1000000',
         durationSeconds: 1000,
+      }),
+    ).toThrow();
+  });
+});
+
+describe('EscrowDepositSchema', () => {
+  it('validates a correct payload', () => {
+    const result = EscrowDepositSchema.parse({
+      adminSecretKey: SECRET,
+      companyAddress: PUBLIC,
+      tokenAddress: CONTRACT,
+      amount: '500000',
+    });
+    expect(result.amount).toBe('500000');
+  });
+
+  it('rejects zero, negative, and non-numeric amounts', () => {
+    for (const amount of ['0', '-5', '1.5', 'abc']) {
+      expect(() =>
+        EscrowDepositSchema.parse({
+          adminSecretKey: SECRET,
+          companyAddress: PUBLIC,
+          tokenAddress: CONTRACT,
+          amount,
+        }),
+      ).toThrow();
+    }
+  });
+
+  it('rejects unknown keys', () => {
+    expect(() =>
+      EscrowDepositSchema.parse({
+        adminSecretKey: SECRET,
+        companyAddress: PUBLIC,
+        tokenAddress: CONTRACT,
+        amount: '100',
+        runId: 3,
       }),
     ).toThrow();
   });
