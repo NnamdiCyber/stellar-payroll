@@ -54,6 +54,9 @@ pub struct PaymentStreamContract;
 #[contractimpl]
 impl PaymentStreamContract {
     pub fn initialize(env: Env) {
+        if env.storage().instance().has(&DataKey::NextStreamId) {
+            panic!("contract already initialized");
+        }
         env.storage().instance().set(&DataKey::NextStreamId, &0u64);
     }
 
@@ -80,6 +83,9 @@ impl PaymentStreamContract {
         }
         if recipient == sender {
             panic!("sender and recipient must differ");
+        }
+        if memo.len() > 256 {
+            panic!("memo is too long");
         }
 
         let funded = amount_per_second
@@ -421,5 +427,70 @@ mod tests {
             &String::from_str(&env, "self"),
         );
         assert!(self_stream.is_err());
+    }
+
+    #[test]
+    fn test_initialize_cannot_re_init() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PaymentStreamContract);
+        let client = PaymentStreamContractClient::new(&env, &contract_id);
+
+        client.initialize();
+        // A second initialize would reset NextStreamId to 0 and let a
+        // subsequent create_stream silently overwrite an existing stream.
+        let reinit = client.try_initialize();
+        assert!(reinit.is_err());
+
+        let (admin, token, _token_client, _token_query, _funded) = setup(&env);
+        let sender = admin.clone();
+        let recipient = Address::generate(&env);
+
+        let first = create_client_stream(&env, &client, &sender, &recipient, &token, 1_000_000i128);
+        let second = create_client_stream(&env, &client, &sender, &recipient, &token, 500_000i128);
+
+        assert_ne!(first, second);
+        assert_eq!(client.get_stream(&first).id, first);
+        assert_eq!(client.get_stream(&second).id, second);
+    }
+
+    #[test]
+    fn test_rejects_oversized_memo() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, PaymentStreamContract);
+        let client = PaymentStreamContractClient::new(&env, &contract_id);
+
+        let (admin, token, _token_client, _token_query, _funded) = setup(&env);
+        let sender = admin.clone();
+        let recipient = Address::generate(&env);
+
+        client.initialize();
+
+        let long_memo = String::from_str(&env, &"m".repeat(257));
+        let oversize = client.try_create_stream(
+            &sender,
+            &recipient,
+            &token,
+            &RATE,
+            &1_000_000i128,
+            &DURATION,
+            &long_memo,
+        );
+        assert!(oversize.is_err());
+
+        let max_len_memo = String::from_str(&env, &"m".repeat(256));
+        let boundary = client.try_create_stream(
+            &sender,
+            &recipient,
+            &token,
+            &RATE,
+            &1_000_000i128,
+            &DURATION,
+            &max_len_memo,
+        );
+        assert!(boundary.is_ok());
     }
 }
